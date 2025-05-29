@@ -1,0 +1,11 @@
+{
+  "ignore": ["**/*PyQt6*"],
+  "reportMissingImports": false,
+  "pythonVersion": "3.8",
+  "strict": false,
+  "reportOptionalMemberAccess": false,
+  "reportOptionalCall": false,
+  "reportOptionalOperand": false,
+  "reportOptionalSubscript": false,
+  "reportGeneralTypeIssues": false
+}
