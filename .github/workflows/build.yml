@@ -68,30 +68,39 @@ jobs:
         shell: pwsh
 
       # Create platform-specific packages
-      - name: Create AppImage (Linux)
+      - name: Create Linux package
         if: runner.os == 'Linux'
         run: |
+          # Rename the executable
           mv dist/userchrome-loader dist/userchrome-loader-linux
+          # Create a zip archive for Linux
+          cd dist && zip -r userchrome-loader-linux.zip userchrome-loader-linux && cd ..
 
       - name: Create Windows package
         if: runner.os == 'Windows'
         run: |
+          # Rename the executable
           mv dist/userchrome-loader.exe dist/userchrome-loader-windows.exe
+          # Create a zip archive for Windows
+          cd dist && powershell Compress-Archive -Path userchrome-loader-windows.exe -DestinationPath userchrome-loader-windows.zip
 
       - name: Create macOS package
         if: runner.os == 'macOS'
         run: |
+          # First rename the app bundle
           mv dist/userchrome-loader.app dist/userchrome-loader-macos.app
+          # Create a zip archive of the app bundle to preserve its structure
+          cd dist && zip -r userchrome-loader-macos.zip userchrome-loader-macos.app && cd ..
 
       - name: Prepare artifacts for upload
         run: |
           mkdir -p userchrome-loader-${{ runner.os }}
           if [ "${{ runner.os }}" == "Linux" ]; then
-            cp -r dist/userchrome-loader-linux* userchrome-loader-${{ runner.os }}/
+            cp dist/userchrome-loader-linux.zip userchrome-loader-${{ runner.os }}/
           elif [ "${{ runner.os }}" == "Windows" ]; then
-            cp -r dist/userchrome-loader-windows* userchrome-loader-${{ runner.os }}/
+            cp dist/userchrome-loader-windows.zip userchrome-loader-${{ runner.os }}/
           elif [ "${{ runner.os }}" == "macOS" ]; then
-            cp -r dist/userchrome-loader-macos* userchrome-loader-${{ runner.os }}/
+            cp dist/userchrome-loader-macos.zip userchrome-loader-${{ runner.os }}/
           fi
         shell: bash
 
@@ -116,11 +125,15 @@ jobs:
           ls -la artifacts/
           find artifacts -type f | sort
 
+
+
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
           files: |
-            artifacts/userchrome-loader-Linux/**/*
-            artifacts/userchrome-loader-Windows/**/*
-            artifacts/userchrome-loader-macOS/**/*
+            artifacts/userchrome-loader-Linux/*.zip
+            artifacts/userchrome-loader-Windows/*.zip
+            artifacts/userchrome-loader-macOS/*.zip
           token: ${{ github.token }}
+          draft: false
+          prerelease: false
