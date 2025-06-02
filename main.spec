@@ -92,10 +92,20 @@ def get_platform_libraries():
         ]
 
         # Add more paths from environment if available
-        if 'LD_LIBRARY_PATH' in os.environ:
-            for path in os.environ['LD_LIBRARY_PATH'].split(':'):
+        if 'DYLD_LIBRARY_PATH' in os.environ:
+            for path in os.environ['DYLD_LIBRARY_PATH'].split(':'):
                 if path and path not in lib_dirs:
                     lib_dirs.append(path)
+
+        # Check for homebrew libarchive path
+        homebrew_lib_paths = [
+            '/opt/homebrew/opt/libarchive/lib',
+            '/usr/local/opt/libarchive/lib',
+        ]
+        for lib_path in homebrew_lib_paths:
+            if os.path.exists(lib_path) and lib_path not in lib_dirs:
+                lib_dirs.append(lib_path)
+                print(f"Added homebrew libarchive path: {lib_path}")
 
         # Find libraries using glob patterns
         import glob
@@ -166,6 +176,8 @@ icon_file_icns = assets_icns if os.path.exists(assets_icns) else icon_file  # ma
 # Ensure assets directory exists
 os.makedirs('assets', exist_ok=True)
 
+
+
 # Log icon availability
 print(f"SVG icon exists: {os.path.exists(icon_file)}")
 print(f"ICO icon exists: {os.path.exists(assets_ico)}")
@@ -219,6 +231,9 @@ HIDDEN_IMPORTS = [
     'libarchive.extract',
     'libarchive.write',
     'libarchive.read',
+    'libarchive.entry',
+    'libarchive.ffi',
+    'libarchive.callback',
     'json',
     'configparser',
     'platform',
@@ -242,9 +257,16 @@ HIDDEN_IMPORTS = [
     'src.infrastructure.gitlab_api',
 ]
 
-# Add platform-specific Qt modules only if needed
+# Add platform-specific PyQt6 modules only if needed
 if get_platform() == 'linux':
     HIDDEN_IMPORTS.append('PyQt6.QtDBus')
+elif get_platform() == 'darwin':
+    # Add extra libarchive modules for macOS
+    HIDDEN_IMPORTS.extend([
+        'libarchive.ffi',
+        'libarchive.callback',
+        'libarchive.entry',
+    ])
 
 # Modules to exclude
 EXCLUDES = [
@@ -264,8 +286,12 @@ EXCLUDES = [
     'pandas',
     'matplotlib',
     'scipy',
-    # Don't exclude these
-    # 'libarchive',
+    # Don't exclude these - ensure all libarchive components are included
+    # 'libarchive', 
+    # 'libarchive.public',
+    # 'libarchive.extract',
+    # 'libarchive.write',
+    # 'libarchive.read',
 ]
 
 # Add platform-specific exclusions
@@ -324,6 +350,18 @@ print(f"Total hidden imports: {len(HIDDEN_IMPORTS)}")
 print(f"Total exclusions: {len(EXCLUDES)}")
 print(f"Total data files: {len(datas)}")
 print(f"Total binaries: {len(binaries)}")
+
+# Add PKG_CONFIG_PATH for libarchive on macOS
+if get_platform() == 'darwin':
+    pkg_config_paths = [
+        "/opt/homebrew/opt/libarchive/lib/pkgconfig",
+        "/usr/local/opt/libarchive/lib/pkgconfig"
+    ]
+    for pkg_path in pkg_config_paths:
+        if os.path.exists(pkg_path):
+            os.environ['PKG_CONFIG_PATH'] = pkg_path
+            print(f"Set PKG_CONFIG_PATH to {pkg_path}")
+            break
 
 a = Analysis(
     ['src/launcher.py'],
