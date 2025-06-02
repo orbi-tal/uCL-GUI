@@ -7,6 +7,9 @@ on:
   pull_request:
     branches: [main]
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ${{ matrix.os }}
@@ -80,12 +83,23 @@ jobs:
         run: |
           mv dist/userchrome-loader.app dist/userchrome-loader-macos.app
 
+      - name: Prepare artifacts for upload
+        run: |
+          mkdir -p userchrome-loader-${{ runner.os }}
+          if [ "${{ runner.os }}" == "Linux" ]; then
+            cp -r dist/userchrome-loader-linux* userchrome-loader-${{ runner.os }}/
+          elif [ "${{ runner.os }}" == "Windows" ]; then
+            cp -r dist/userchrome-loader-windows* userchrome-loader-${{ runner.os }}/
+          elif [ "${{ runner.os }}" == "macOS" ]; then
+            cp -r dist/userchrome-loader-macos* userchrome-loader-${{ runner.os }}/
+          fi
+        shell: bash
+
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: userchrome-loader-${{ runner.os }}
-          path: |
-            dist/userchrome-loader-*
+          path: userchrome-loader-${{ runner.os }}
           retention-days: 90
 
   release:
@@ -94,13 +108,19 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: List downloaded artifacts
+        run: |
+          ls -la artifacts/
+          find artifacts -type f | sort
 
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
           files: |
-            userchrome-loader-Linux/*
-            userchrome-loader-Windows/*
-            userchrome-loader-macOS/*
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+            artifacts/userchrome-loader-Linux/**/*
+            artifacts/userchrome-loader-Windows/**/*
+            artifacts/userchrome-loader-macOS/**/*
+          token: ${{ github.token }}
