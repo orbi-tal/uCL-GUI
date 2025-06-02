@@ -38,6 +38,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
           pip install pyinstaller
+          pip install libarchive-c
 
 
 
@@ -46,14 +47,27 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           export OPTIMIZE=1
-          pyinstaller --clean --noconfirm main.spec
+          # Install system dependencies for libarchive
+          sudo apt-get update
+          sudo apt-get install -y libarchive-dev
+          # Print Python paths and debug info
+          python -c "import sys; print(sys.path)"
+          python -c "import libarchive; print(f'libarchive: {libarchive.__file__}')"
+          # Build with detailed logging
+          pyinstaller --clean --noconfirm --log-level=DEBUG --hidden-import libarchive.public --hidden-import libarchive.extract --hidden-import libarchive.write --hidden-import libarchive.read main.spec
         shell: bash
 
       - name: Build with PyInstaller (macOS)
         if: runner.os == 'macOS'
         run: |
           export OPTIMIZE=1
-          pyinstaller --clean --noconfirm main.spec
+          # Install libarchive with Homebrew
+          brew install libarchive
+          # Print Python paths and debug info
+          python -c "import sys; print(sys.path)"
+          python -c "import libarchive; print(f'libarchive: {libarchive.__file__}')"
+          # Build with detailed logging
+          pyinstaller --clean --noconfirm --log-level=DEBUG --hidden-import libarchive.public --hidden-import libarchive.extract --hidden-import libarchive.write --hidden-import libarchive.read main.spec
         shell: bash
 
       - name: Build with PyInstaller (Windows)
@@ -63,18 +77,30 @@ jobs:
           $env:PYTHONPATH = $env:pythonLocation
           $env:PATH = "$env:pythonLocation;$env:pythonLocation\Scripts;$env:PATH"
           
-          # Build with PyInstaller - let main.spec handle all DLL inclusion
-          pyinstaller --clean --noconfirm main.spec
+          # Print Python paths and debug info
+          python -c "import sys; print(sys.path)"
+          python -c "import libarchive; print(f'libarchive: {libarchive.__file__}')"
+          
+          # Build with PyInstaller with more verbose output
+          pyinstaller --clean --noconfirm --log-level=DEBUG --hidden-import libarchive.public --hidden-import libarchive.extract --hidden-import libarchive.write --hidden-import libarchive.read --hidden-import libarchive.entry main.spec
         shell: pwsh
 
       # Create platform-specific packages
       - name: Create Linux package
         if: runner.os == 'Linux'
         run: |
+          # Test if the executable can run
+          dist/userchrome-loader --help || echo "Executable test failed, but continuing..."
+          
           # Rename the executable
           mv dist/userchrome-loader dist/userchrome-loader-linux
+          
+          # Copy libarchive shared library to the same directory
+          mkdir -p dist/libs
+          cp -P /usr/lib/x86_64-linux-gnu/libarchive.so* dist/libs/
+          
           # Create a zip archive for Linux
-          cd dist && zip -r userchrome-loader-linux.zip userchrome-loader-linux && cd ..
+          cd dist && zip -r userchrome-loader-linux.zip userchrome-loader-linux libs && cd ..
 
       - name: Create Windows package
         if: runner.os == 'Windows'

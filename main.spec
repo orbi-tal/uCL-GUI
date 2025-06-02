@@ -215,6 +215,10 @@ HIDDEN_IMPORTS = [
     # Application-specific modules
     'pycurl',
     'libarchive',
+    'libarchive.public',
+    'libarchive.extract',
+    'libarchive.write',
+    'libarchive.read',
     'json',
     'configparser',
     'platform',
@@ -260,6 +264,8 @@ EXCLUDES = [
     'pandas',
     'matplotlib',
     'scipy',
+    # Don't exclude these
+    # 'libarchive',
 ]
 
 # Add platform-specific exclusions
@@ -332,6 +338,8 @@ a = Analysis(
     win_no_prefer_redirects=False,
     cipher=None,
     noarchive=False,
+    # Add more debug info
+    log_level='DEBUG',
 )
 
 pyz = PYZ(
