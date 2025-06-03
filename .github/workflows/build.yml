@@ -125,9 +125,9 @@ jobs:
           # Build AppImage with explicit output name
           ./appimagetool UserChrome-Loader.AppDir userchrome-loader-linux.AppImage
 
-          # Move to dist
-          mkdir -p dist/linux
-          mv userchrome-loader-linux.AppImage dist/linux/
+          # Move AppImage directly to dist folder
+          mkdir -p dist
+          mv userchrome-loader-linux.AppImage dist/
 
       - name: Package Windows executable
         if: runner.os == 'Windows'
@@ -147,13 +147,11 @@ jobs:
             cp dist/userchrome-loader dist/macos/userchrome-loader-macos
           fi
 
-      # Create archives
+      # Create archives (only for Windows and macOS)
       - name: Create distribution archives
         run: |
           cd dist
-          if [ "${{ runner.os }}" == "Linux" ]; then
-            zip -r userchrome-loader-linux.zip linux/
-          elif [ "${{ runner.os }}" == "Windows" ]; then
+          if [ "${{ runner.os }}" == "Windows" ]; then
             powershell -Command "Compress-Archive -Path windows/* -DestinationPath userchrome-loader-windows.zip"
           elif [ "${{ runner.os }}" == "macOS" ]; then
             zip -r userchrome-loader-macos.zip macos/
@@ -166,6 +164,7 @@ jobs:
           name: userchrome-loader-${{ runner.os }}
           path: |
             dist/*.zip
+            dist/*.AppImage
           retention-days: 90
 
   release:
@@ -178,12 +177,14 @@ jobs:
           path: artifacts
 
       - name: List artifacts
-        run: find artifacts -type f -name "*.zip" | sort
+        run: find artifacts -type f -name "*.zip" -o -name "*.AppImage" | sort
 
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
-          files: artifacts/*/*.zip
+          files: |
+            artifacts/**/*.zip
+            artifacts/**/*.AppImage
           name: "UserChrome Loader ${{ github.ref_name }}"
           token: ${{ github.token }}
           draft: false
