@@ -1,7 +1,13 @@
-# <img src="assets/icon.png" height="32px" alt="uCL GUI Logo"/> uCL GUI
+<h1 align="center">
+  <img width="120" height="120" src="assets/icon.svg">
+  <br>
+  uCL GUI
+</h1>
 
-A user-friendly tool to manage custom CSS files for [Zen Browser](https://zen-browser.app/).
+<p align="center">
+A user-friendly tool to manage custom CSS files for [Zen Browser](https://zen-browser.app/). 
 Best used with mods following [uCL standards](https://github.com/greeeen-dev/userchrome-loader/).
+</p>
 
 ## Features
 
