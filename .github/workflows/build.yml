@@ -35,6 +35,8 @@ jobs:
             libgl1 libegl1 libglu1-mesa libglx-mesa0 \
             libxcb1 libxkbcommon0 libxcb-xinerama0 \
             libxcb-randr0 libxcb-render0 libxcb-shape0 \
+            libxcb-shm0 libxcb-sync1 libxcb-xfixes0 libxcb-xkb1 \
+            libxcb-render-util0 libxcb-image0 libxcb-keysyms1 libxcb-icccm4 libxcb-cursor0 \
             libxkbcommon-x11-0 \
             fuse libfuse2
 
@@ -46,7 +48,26 @@ jobs:
 
       # Build with PyInstaller (simplified)
       - name: Build with PyInstaller
+        if: runner.os != 'Linux'
         run: |
+          # Print debug info
+          python -c "import sys; print('Python executable:', sys.executable)"
+          python -c "import sys; print('Python path:', sys.path)"
+          python -c "import PyQt6; print('PyQt6 location:', PyQt6.__file__)"
+
+          # Clean build
+          pyinstaller --clean --noconfirm --log-level=INFO main.spec
+        shell: bash
+
+      # Linux-specific build with additional dependencies
+      - name: Build with PyInstaller (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          # Install additional dependencies needed for Qt6/XCB integration
+          sudo apt-get install -y \
+            libxcb-render-util0 libxcb-image0 libxcb-icccm4 \
+            libxcb-keysyms1 libxcb-cursor0
+            
           # Print debug info
           python -c "import sys; print('Python executable:', sys.executable)"
           python -c "import sys; print('Python path:', sys.path)"

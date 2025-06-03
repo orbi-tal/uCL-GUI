@@ -54,16 +54,44 @@ def get_platform_libraries():
             '/usr/lib',
         ]
 
-        # Only look for Python shared library if needed
+        # XCB libraries needed for Qt6
+        xcb_libs = [
+            'libxcb.so*',
+            'libxcb-render.so*',
+            'libxcb-render-util.so*',
+            'libxcb-image.so*',
+            'libxcb-icccm.so*',
+            'libxcb-keysyms.so*',
+            'libxcb-cursor.so*',
+            'libxcb-shape.so*',
+            'libxcb-shm.so*',
+            'libxcb-sync.so*',
+            'libxcb-xfixes.so*',
+            'libxcb-xkb.so*',
+            'libxcb-randr.so*',
+            'libxcb-xinerama.so*',
+            'libxkbcommon.so*',
+            'libxkbcommon-x11.so*',
+        ]
+
+        # Look for Python shared library and XCB libraries
         for lib_dir in lib_dirs:
             if not os.path.exists(lib_dir):
                 continue
 
+            # Look for Python library
             for lib_path in glob.glob(os.path.join(lib_dir, f"libpython{py_version}*.so*")):
                 if os.path.isfile(lib_path):
                     print(f"Found Linux library: {lib_path}")
                     binaries.append((lib_path, '.'))
                     break
+
+            # Look for XCB libraries
+            for xcb_lib in xcb_libs:
+                for lib_path in glob.glob(os.path.join(lib_dir, xcb_lib)):
+                    if os.path.isfile(lib_path) and os.access(lib_path, os.R_OK):
+                        print(f"Found XCB library: {lib_path}")
+                        binaries.append((lib_path, '.'))
 
         print(f"Total Linux libraries found: {len(binaries)}")
 
@@ -260,11 +288,12 @@ else:
         strip=False,
         upx=True,
         upx_exclude=[
-            # Don't compress libraries that might have issues
             'libGL.so*',
             'libGLX.so*',
             'libEGL.so*',
             'libGLU.so*',
+            'libxcb*.so*',
+            'libxkb*.so*',
         ],
         runtime_tmpdir=None,
         console=False,
