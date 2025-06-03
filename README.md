@@ -5,8 +5,8 @@
 </h1>
 
 <p align="center">
-A user-friendly tool to manage custom CSS files for [Zen Browser](https://zen-browser.app/). 
-Best used with mods following [uCL standards](https://github.com/greeeen-dev/userchrome-loader/).
+A user-friendly tool to manage custom CSS files for <a href="https://zen-browser.app/">Zen Browser</a>.<br>
+Best used with mods following <a href="https://github.com/greeeen-dev/userchrome-loader/">uCL standards</a>.
 </p>
 
 ## Features
