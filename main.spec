@@ -2,10 +2,6 @@ import os
 import platform
 import sys
 from pathlib import Path
-from PyInstaller.building.api import BUNDLE, EXE, PYZ, COLLECT, MERGE
-from PyInstaller.building.build_main import Analysis
-from PyInstaller.building.datastruct import Tree
-from PyInstaller.utils.hooks import collect_all, collect_submodules
 
 def get_platform():
     return platform.system().lower()
@@ -262,17 +258,20 @@ exe = EXE(
 
 # macOS specific configuration
 if get_platform() == 'darwin':
+    app_name = 'UserChrome Loader.app'
+    info_plist = {
+        'CFBundleShortVersionString': '1.0.0',
+        'CFBundleExecutable': 'userchrome-loader',
+        'CFBundleName': 'UserChrome Loader',
+        'CFBundleDisplayName': 'UserChrome Loader',
+        'NSHighResolutionCapable': True,
+        'NSRequiresAquaSystemAppearance': False,
+    }
+    
     app = BUNDLE(
         exe,
-        name='UserChrome Loader.app',
+        name=app_name,
         icon=icon_file,
         bundle_identifier='com.orbital.userchrome-loader',
-        info_plist={
-            'CFBundleShortVersionString': '1.0.0',
-            'CFBundleExecutable': 'userchrome-loader',
-            'CFBundleName': 'UserChrome Loader',
-            'CFBundleDisplayName': 'UserChrome Loader',
-            'NSHighResolutionCapable': True,
-            'NSRequiresAquaSystemAppearance': False,
-        },
+        info_plist=info_plist,
     )
