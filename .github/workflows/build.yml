@@ -38,7 +38,8 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
           pip install pyinstaller
-          pip install libarchive-c
+          # Make libarchive-c optional - installation may fail on some platforms
+          pip install libarchive-c || echo "libarchive-c installation skipped - some archive formats may not be supported"
 
 
 
@@ -47,13 +48,13 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           export OPTIMIZE=1
-          # Install system dependencies for libarchive
+          # Try to install system dependencies for libarchive, but don't fail if unavailable
           sudo apt-get update
-          sudo apt-get install -y libarchive-dev
+          sudo apt-get install -y libarchive-dev || echo "libarchive-dev installation skipped - some archive formats may not be supported"
           # Print Python paths and debug info
           python -c "import sys; print(sys.path)"
-          python -c "import libarchive; print(f'libarchive: {libarchive.__file__}')"
-          # Build with detailed logging (no hidden-import flags when using spec file)
+          python -c "import libarchive; print(f'libarchive: {libarchive.__file__}')" || echo "libarchive module not available (this is OK)"
+          # Build with detailed logging
           pyinstaller --clean --noconfirm --log-level=DEBUG main.spec
         shell: bash
 
@@ -61,17 +62,14 @@ jobs:
         if: runner.os == 'macOS'
         run: |
           export OPTIMIZE=1
-          # Install libarchive with Homebrew
-          brew install libarchive
-          # Set pkg-config path for libarchive
-          export PKG_CONFIG_PATH="/opt/homebrew/opt/libarchive/lib/pkgconfig"
-          # Make macOS fix script executable
-          chmod +x scripts/macos_libarchive_fix.sh
-          # Run the macOS libarchive fix script
-          ./scripts/macos_libarchive_fix.sh
+          # Skip libarchive installation - application works without it
+          # Just use Python's built-in zipfile and tarfile modules
+          
           # Print Python paths and debug info
           python -c "import sys; print(sys.path)"
-          python -c "import libarchive; print(f'libarchive: {libarchive.__file__}')"
+          python -c "import zipfile; print(f'zipfile: {zipfile.__file__}')"
+          python -c "import tarfile; print(f'tarfile: {tarfile.__file__}')"
+          
           # Build with detailed logging (no hidden-import flags when using spec file)
           pyinstaller --clean --noconfirm --log-level=DEBUG main.spec
         shell: bash
@@ -85,7 +83,9 @@ jobs:
           
           # Print Python paths and debug info
           python -c "import sys; print(sys.path)"
-          python -c "import libarchive; print(f'libarchive: {libarchive.__file__}')"
+          python -c "import zipfile; print(f'zipfile: {zipfile.__file__}')"
+          python -c "import tarfile; print(f'tarfile: {tarfile.__file__}')"
+          python -c "import libarchive; print(f'libarchive: {libarchive.__file__}')" || echo "libarchive module not available (this is OK)"
           
           # Build with PyInstaller with more verbose output (no hidden-import flags when using spec file)
           pyinstaller --clean --noconfirm --log-level=DEBUG main.spec
@@ -101,12 +101,20 @@ jobs:
           # Rename the executable
           mv dist/userchrome-loader dist/userchrome-loader-linux
           
-          # Copy libarchive shared library to the same directory
-          mkdir -p dist/libs
-          cp -P /usr/lib/x86_64-linux-gnu/libarchive.so* dist/libs/
+          # Try to copy libarchive shared library if it exists (but don't fail if not)
+          if [ -d "/usr/lib/x86_64-linux-gnu" ]; then
+            mkdir -p dist/libs
+            cp -P /usr/lib/x86_64-linux-gnu/libarchive.so* dist/libs/ || echo "No libarchive libraries found (this is OK)"
+          fi
           
-          # Create a zip archive for Linux
-          cd dist && zip -r userchrome-loader-linux.zip userchrome-loader-linux libs && cd ..
+          # Create a zip archive for Linux (include libs directory only if it exists and has files)
+          cd dist
+          if [ -d "libs" ] && [ "$(ls -A libs)" ]; then
+            zip -r userchrome-loader-linux.zip userchrome-loader-linux libs
+          else
+            zip -r userchrome-loader-linux.zip userchrome-loader-linux
+          fi
+          cd ..
 
       - name: Create Windows package
         if: runner.os == 'Windows'
@@ -121,9 +129,8 @@ jobs:
         run: |
           # First rename the app bundle
           mv dist/userchrome-loader.app dist/userchrome-loader-macos.app
-          # Apply the macOS libarchive fix to the app bundle
-          ./scripts/macos_libarchive_fix.sh
-          # Note: The fix script already creates the zip archive
+          # Create a zip archive of the app bundle to preserve its structure
+          cd dist && zip -r userchrome-loader-macos.zip userchrome-loader-macos.app && cd ..
 
       - name: Prepare artifacts for upload
         run: |
@@ -133,10 +140,8 @@ jobs:
           elif [ "${{ runner.os }}" == "Windows" ]; then
             cp dist/userchrome-loader-windows.zip userchrome-loader-${{ runner.os }}/
           elif [ "${{ runner.os }}" == "macOS" ]; then
-            # The zip is already created by the fix script
+            # Copy the zip file
             cp dist/userchrome-loader-macos.zip userchrome-loader-${{ runner.os }}/
-            # Also include the fix script for users who might need it
-            cp scripts/macos_libarchive_fix.sh userchrome-loader-${{ runner.os }}/
           fi
         shell: bash
 

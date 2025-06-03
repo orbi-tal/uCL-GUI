@@ -97,15 +97,7 @@ def get_platform_libraries():
                 if path and path not in lib_dirs:
                     lib_dirs.append(path)
 
-        # Check for homebrew libarchive path
-        homebrew_lib_paths = [
-            '/opt/homebrew/opt/libarchive/lib',
-            '/usr/local/opt/libarchive/lib',
-        ]
-        for lib_path in homebrew_lib_paths:
-            if os.path.exists(lib_path) and lib_path not in lib_dirs:
-                lib_dirs.append(lib_path)
-                print(f"Added homebrew libarchive path: {lib_path}")
+        # Standard library paths should be sufficient
 
         # Find libraries using glob patterns
         import glob
@@ -226,14 +218,6 @@ HIDDEN_IMPORTS = [
 
     # Application-specific modules
     'pycurl',
-    'libarchive',
-    'libarchive.public',
-    'libarchive.extract',
-    'libarchive.write',
-    'libarchive.read',
-    'libarchive.entry',
-    'libarchive.ffi',
-    'libarchive.callback',
     'json',
     'configparser',
     'platform',
@@ -261,12 +245,8 @@ HIDDEN_IMPORTS = [
 if get_platform() == 'linux':
     HIDDEN_IMPORTS.append('PyQt6.QtDBus')
 elif get_platform() == 'darwin':
-    # Add extra libarchive modules for macOS
-    HIDDEN_IMPORTS.extend([
-        'libarchive.ffi',
-        'libarchive.callback',
-        'libarchive.entry',
-    ])
+    # Add macOS specific imports if needed
+    pass
 
 # Modules to exclude
 EXCLUDES = [
@@ -286,12 +266,7 @@ EXCLUDES = [
     'pandas',
     'matplotlib',
     'scipy',
-    # Don't exclude these - ensure all libarchive components are included
-    # 'libarchive', 
-    # 'libarchive.public',
-    # 'libarchive.extract',
-    # 'libarchive.write',
-    # 'libarchive.read',
+    # Standard exclusions are fine - we don't rely on libarchive
 ]
 
 # Add platform-specific exclusions
@@ -351,17 +326,7 @@ print(f"Total exclusions: {len(EXCLUDES)}")
 print(f"Total data files: {len(datas)}")
 print(f"Total binaries: {len(binaries)}")
 
-# Add PKG_CONFIG_PATH for libarchive on macOS
-if get_platform() == 'darwin':
-    pkg_config_paths = [
-        "/opt/homebrew/opt/libarchive/lib/pkgconfig",
-        "/usr/local/opt/libarchive/lib/pkgconfig"
-    ]
-    for pkg_path in pkg_config_paths:
-        if os.path.exists(pkg_path):
-            os.environ['PKG_CONFIG_PATH'] = pkg_path
-            print(f"Set PKG_CONFIG_PATH to {pkg_path}")
-            break
+# No special PKG_CONFIG_PATH needed since we don't require libarchive
 
 a = Analysis(
     ['src/launcher.py'],

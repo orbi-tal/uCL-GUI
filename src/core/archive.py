@@ -9,13 +9,15 @@ from typing import List, Optional, Tuple, Set
 from .exceptions import ArchiveError
 
 # Try to import libarchive modules
+# Make this completely optional - we'll use built-in modules as primary method
+LIBARCHIVE_AVAILABLE = False
 try:
     import libarchive
     import libarchive.public
     LIBARCHIVE_AVAILABLE = True
+    print("libarchive detected - advanced archive formats will be supported")
 except ImportError:
-    LIBARCHIVE_AVAILABLE = False
-    print("Warning: libarchive.public module not available. Some archive formats may not be supported.")
+    print("Notice: libarchive not available. Only zip, tar, tgz, and tbz2 formats supported.")
 
 class ArchiveProcessor:
     """Handle archive extraction and processing"""
@@ -31,12 +33,16 @@ class ArchiveProcessor:
             '.tbz2': self._extract_tar
         }
         
-        # Add libarchive support if available
+        # Add libarchive support only if available
         if LIBARCHIVE_AVAILABLE:
             print("libarchive support enabled for additional archive formats")
             self.supported_extensions['.7z'] = self._extract_libarchive
             self.supported_extensions['.rar'] = self._extract_libarchive
             self.supported_extensions['.iso'] = self._extract_libarchive
+        else:
+            # Add .xpi to zip formats (Firefox extensions are just zip files)
+            # This ensures we can always handle the main use case
+            self.supported_extensions['.xpi'] = self._extract_zip
 
     def is_archive(self, file_path: str) -> bool:
         """Check if a file is a supported archive"""
@@ -88,15 +94,18 @@ class ArchiveProcessor:
                     print(f"Archive extraction error ({ext} format): {str(e)}")
                     print(f"Archive path: {archive_path}")
                     traceback.print_exc()
-                    
-                    # Attempt fallback to other methods if available
-                    if ext != '.zip' and self._extract_zip in self.supported_extensions.values():
+            
+                    # Attempt fallback to ZIP method for all formats
+                    # This helps with .xpi files (Firefox extensions) that might be misidentified
+                    if not archive_path.lower().endswith('.zip'):
                         print("Attempting fallback to ZIP extraction method...")
                         try:
-                            return self._extract_zip(archive_path, tempfile.mkdtemp(prefix="userchrome_extract_fallback_"))
-                        except Exception:
+                            fallback_dir = tempfile.mkdtemp(prefix="userchrome_extract_fallback_")
+                            return self._extract_zip(archive_path, fallback_dir)
+                        except Exception as fallback_error:
+                            print(f"ZIP fallback also failed: {fallback_error}")
                             pass  # Fallback failed, continue with original error
-                    
+            
                     raise ArchiveError(f"Failed to extract archive: {str(e)}")
 
         # This should never happen due to the is_archive check
@@ -168,7 +177,9 @@ class ArchiveProcessor:
     def _extract_libarchive(self, archive_path: str, extract_dir: str) -> str:
         """Extract an archive using libarchive"""
         if not LIBARCHIVE_AVAILABLE:
-            raise ArchiveError("libarchive is not available for this format")
+            # Instead of failing, try falling back to zip
+            print("libarchive not available, attempting to open as zip file...")
+            return self._extract_zip(archive_path, extract_dir)
             
         try:
             # Use libarchive to extract the archive
