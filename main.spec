@@ -76,19 +76,19 @@ def get_platform_libraries():
         print(f"Total Windows DLLs found: {len(binaries)}")
 
     elif platform_name == 'linux':
-            # Linux: Include libpython and other critical libraries
-            # Note: When building for AppImage, most library dependencies will be handled by the AppImage format
-            py_version = f"{sys.version_info.major}.{sys.version_info.minor}"
-            lib_patterns = [
-                f"libpython{py_version}.so*",
-                f"libpython{py_version}m.so*",
-                "libcurl.so*",
-                "libarchive.so*",
-                "libEGL.so*",  # EGL library for PyQt6
-                "libGL.so*",   # OpenGL library (replaces libgl1-mesa-glx)
-                "libGLX.so*",  # GLX library for X11
-                "libGLU.so*",  # GLU utilities
-            ]
+        # Linux: Include libpython and other critical libraries
+        # Note: When building for AppImage, most library dependencies will be handled by the AppImage format
+        py_version = f"{sys.version_info.major}.{sys.version_info.minor}"
+        lib_patterns = [
+            f"libpython{py_version}.so*",
+            f"libpython{py_version}m.so*",
+            "libcurl.so*",
+            "libarchive.so*",
+            "libEGL.so*",  # EGL library for PyQt6
+            "libGL.so*",   # OpenGL library (replaces libgl1-mesa-glx)
+            "libGLX.so*",  # GLX library for X11
+            "libGLU.so*",  # GLU utilities
+        ]
 
         # Common library locations on Linux
         lib_dirs = [
