@@ -84,7 +84,10 @@ def get_platform_libraries():
                 f"libpython{py_version}m.so*",
                 "libcurl.so*",
                 "libarchive.so*",
-                "libEGL.so*",  # Add EGL library for PyQt6
+                "libEGL.so*",  # EGL library for PyQt6
+                "libGL.so*",   # OpenGL library (replaces libgl1-mesa-glx)
+                "libGLX.so*",  # GLX library for X11
+                "libGLU.so*",  # GLU utilities
             ]
 
         # Common library locations on Linux
@@ -188,6 +191,7 @@ a = Analysis(
         ('src/ui/icons', 'src/ui/icons'),
         ('src/ui/styles', 'src/ui/styles'),
     ],
+    exclude_binaries=False,  # Don't exclude binaries to ensure all dependencies are included
     hiddenimports=[
         # Both forms of module imports
         'PyQt6.QtWidgets',
@@ -241,7 +245,12 @@ exe = EXE(
     bootloader_ignore_signals=False,
     strip=False,
     upx=True,
-    upx_exclude=[],
+    upx_exclude=[
+        'libGL.so*',   # Don't compress OpenGL libraries
+        'libGLX.so*',
+        'libEGL.so*',
+        'libGLU.so*',
+    ],
     runtime_tmpdir=None,
     console=False,
     disable_windowed_traceback=False,
