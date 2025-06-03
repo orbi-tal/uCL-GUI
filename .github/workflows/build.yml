@@ -38,22 +38,18 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
           pip install pyinstaller
-          # Make libarchive-c optional - installation may fail on some platforms
-          pip install libarchive-c || echo "libarchive-c installation skipped - some archive formats may not be supported"
-
-
 
       # Build with PyInstaller
       - name: Build with PyInstaller (Linux)
         if: runner.os == 'Linux'
         run: |
           export OPTIMIZE=1
-          # Try to install system dependencies for libarchive, but don't fail if unavailable
+          # No special system dependencies needed anymore
           sudo apt-get update
-          sudo apt-get install -y libarchive-dev || echo "libarchive-dev installation skipped - some archive formats may not be supported"
           # Print Python paths and debug info
           python -c "import sys; print(sys.path)"
-          python -c "import libarchive; print(f'libarchive: {libarchive.__file__}')" || echo "libarchive module not available (this is OK)"
+          python -c "import zipfile; print(f'zipfile: {zipfile.__file__}')"
+          python -c "import tarfile; print(f'tarfile: {tarfile.__file__}')"
           # Build with detailed logging
           pyinstaller --clean --noconfirm --log-level=DEBUG main.spec
         shell: bash
@@ -64,12 +60,12 @@ jobs:
           export OPTIMIZE=1
           # Skip libarchive installation - application works without it
           # Just use Python's built-in zipfile and tarfile modules
-          
+
           # Print Python paths and debug info
           python -c "import sys; print(sys.path)"
           python -c "import zipfile; print(f'zipfile: {zipfile.__file__}')"
           python -c "import tarfile; print(f'tarfile: {tarfile.__file__}')"
-          
+
           # Build with detailed logging (no hidden-import flags when using spec file)
           pyinstaller --clean --noconfirm --log-level=DEBUG main.spec
         shell: bash
@@ -80,13 +76,12 @@ jobs:
           $env:OPTIMIZE = 1
           $env:PYTHONPATH = $env:pythonLocation
           $env:PATH = "$env:pythonLocation;$env:pythonLocation\Scripts;$env:PATH"
-          
+
           # Print Python paths and debug info
           python -c "import sys; print(sys.path)"
           python -c "import zipfile; print(f'zipfile: {zipfile.__file__}')"
           python -c "import tarfile; print(f'tarfile: {tarfile.__file__}')"
-          python -c "import libarchive; print(f'libarchive: {libarchive.__file__}')" || echo "libarchive module not available (this is OK)"
-          
+
           # Build with PyInstaller with more verbose output (no hidden-import flags when using spec file)
           pyinstaller --clean --noconfirm --log-level=DEBUG main.spec
         shell: pwsh
@@ -97,23 +92,13 @@ jobs:
         run: |
           # Test if the executable can run
           dist/userchrome-loader --help || echo "Executable test failed, but continuing..."
-          
+
           # Rename the executable
           mv dist/userchrome-loader dist/userchrome-loader-linux
-          
-          # Try to copy libarchive shared library if it exists (but don't fail if not)
-          if [ -d "/usr/lib/x86_64-linux-gnu" ]; then
-            mkdir -p dist/libs
-            cp -P /usr/lib/x86_64-linux-gnu/libarchive.so* dist/libs/ || echo "No libarchive libraries found (this is OK)"
-          fi
-          
-          # Create a zip archive for Linux (include libs directory only if it exists and has files)
+
+          # Create a zip archive for Linux
           cd dist
-          if [ -d "libs" ] && [ "$(ls -A libs)" ]; then
-            zip -r userchrome-loader-linux.zip userchrome-loader-linux libs
-          else
-            zip -r userchrome-loader-linux.zip userchrome-loader-linux
-          fi
+          zip -r userchrome-loader-linux.zip userchrome-loader-linux
           cd ..
 
       - name: Create Windows package
@@ -165,8 +150,6 @@ jobs:
         run: |
           ls -la artifacts/
           find artifacts -type f | sort
-
-
 
       - name: Create Release
         uses: softprops/action-gh-release@v1
