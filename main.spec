@@ -200,40 +200,37 @@ pyz = PYZ(
     cipher=block_cipher
 )
 
-# Configure the EXE
-exe = EXE(
-    pyz,
-    a.scripts,
-    a.binaries,
-    a.zipfiles,
-    a.datas,
-    [],
-    name='userchrome-loader',
-    debug=False,
-    bootloader_ignore_signals=False,
-    strip=False,
-    upx=True,
-    upx_exclude=[
-        # Don't compress libraries that might have issues
-        'libGL.so*',
-        'libGLX.so*',
-        'libEGL.so*',
-        'libGLU.so*',
-        '*.dylib',
-    ],
-    runtime_tmpdir=None,
-    console=False,
-    disable_windowed_traceback=False,
-    target_arch=None,
-    codesign_identity=None,
-    entitlements_file=None,
-    icon=icon_file,
-)
-
-# macOS app bundle configuration (only if building on macOS)
+# Configure the EXE differently for macOS vs other platforms
 if get_platform() == 'darwin':
-    app = BUNDLE(
+    # macOS: Create onedir first, then bundle
+    exe = EXE(
+        pyz,
+        a.scripts,
+        [],
+        exclude_binaries=True,
+        name='userchrome-loader',
+        debug=False,
+        bootloader_ignore_signals=False,
+        strip=False,
+        upx=False,  # Disable UPX for macOS
+        console=False,
+        disable_windowed_traceback=False,
+        icon=icon_file,
+    )
+
+    coll = COLLECT(
         exe,
+        a.binaries,
+        a.zipfiles,
+        a.datas,
+        strip=False,
+        upx=False,
+        upx_exclude=[],
+        name='userchrome-loader'
+    )
+
+    app = BUNDLE(
+        coll,
         name='UserChrome Loader.app',
         icon=icon_file,
         bundle_identifier='com.orbital.userchrome-loader',
@@ -247,4 +244,33 @@ if get_platform() == 'darwin':
             'NSRequiresAquaSystemAppearance': False,
             'LSMinimumSystemVersion': '10.15.0',
         },
+    )
+else:
+    # Windows/Linux: Create onefile executable
+    exe = EXE(
+        pyz,
+        a.scripts,
+        a.binaries,
+        a.zipfiles,
+        a.datas,
+        [],
+        name='userchrome-loader',
+        debug=False,
+        bootloader_ignore_signals=False,
+        strip=False,
+        upx=True,
+        upx_exclude=[
+            # Don't compress libraries that might have issues
+            'libGL.so*',
+            'libGLX.so*',
+            'libEGL.so*',
+            'libGLU.so*',
+        ],
+        runtime_tmpdir=None,
+        console=False,
+        disable_windowed_traceback=False,
+        target_arch=None,
+        codesign_identity=None,
+        entitlements_file=None,
+        icon=icon_file,
     )

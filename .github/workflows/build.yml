@@ -101,12 +101,12 @@ jobs:
           EOF
           chmod +x UserChrome-Loader.AppDir/AppRun
 
-          # Build AppImage
-          ./appimagetool UserChrome-Loader.AppDir
+          # Build AppImage with explicit output name
+          ./appimagetool UserChrome-Loader.AppDir userchrome-loader-linux.AppImage
 
           # Move to dist
           mkdir -p dist/linux
-          mv UserChrome-Loader-*.AppImage dist/linux/userchrome-loader-linux.AppImage
+          mv userchrome-loader-linux.AppImage dist/linux/
 
       - name: Package Windows executable
         if: runner.os == 'Windows'
