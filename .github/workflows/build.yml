@@ -25,20 +25,47 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
+          architecture: 'x64'
 
-      # Linux-specific dependencies (simplified)
+      # Enhanced Windows setup
+      - name: Setup Windows build environment
+        if: runner.os == 'Windows'
+        run: |
+          # Install Visual Studio Build Tools and Windows SDK
+          choco install visualstudio2022buildtools --package-parameters "--add Microsoft.VisualStudio.Workload.VCTools --add Microsoft.VisualStudio.Component.Windows11SDK.22621"
+
+          # Install VC++ Redistributable
+          Invoke-WebRequest -Uri https://aka.ms/vs/17/release/vc_redist.x64.exe -OutFile vc_redist.x64.exe
+          Start-Process -FilePath .\vc_redist.x64.exe -Args "/install /quiet /norestart" -Wait
+
+          # Set environment variables for UCRT
+          $env:UCRT_PATH = "${env:ProgramFiles(x86)}\Windows Kits\10\Redist\10.0.22621.0\ucrt\DLLs\x64"
+          if (Test-Path $env:UCRT_PATH) {
+            $env:PATH = "$env:UCRT_PATH;$env:PATH"
+          }
+
+          # Alternative UCRT path
+          $env:UCRT_PATH2 = "${env:ProgramFiles}\Windows Kits\10\Redist\ucrt\DLLs\x64"
+          if (Test-Path $env:UCRT_PATH2) {
+            $env:PATH = "$env:UCRT_PATH2;$env:PATH"
+          }
+
+          echo "PATH=$env:PATH" >> $env:GITHUB_ENV
+        shell: pwsh
+
+      # Linux dependencies (simplified and fixed)
       - name: Install Linux system dependencies
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            libgl1 libegl1 libglu1-mesa libglx-mesa0 \
+            libgl1-mesa-glx libegl1-mesa libglu1-mesa \
             libxcb1 libxkbcommon0 libxcb-xinerama0 \
             libxcb-randr0 libxcb-render0 libxcb-shape0 \
             libxcb-shm0 libxcb-sync1 libxcb-xfixes0 libxcb-xkb1 \
-            libxcb-render-util0 libxcb-image0 libxcb-keysyms1 libxcb-icccm4 libxcb-cursor0 \
-            libxkbcommon-x11-0 \
-            fuse libfuse2
+            libxcb-render-util0 libxcb-image0 libxcb-keysyms1 \
+            libxcb-icccm4 libxcb-cursor0 libxkbcommon-x11-0 \
+            fuse libfuse2 desktop-file-utils
 
       - name: Install Python dependencies
         run: |
@@ -46,38 +73,88 @@ jobs:
           pip install -r requirements.txt
           pip install pyinstaller
 
-      # Build with PyInstaller (simplified)
-      - name: Build with PyInstaller
-        if: runner.os != 'Linux'
+      # Enhanced Windows build
+      - name: Build with PyInstaller (Windows)
+        if: runner.os == 'Windows'
         run: |
-          # Print debug info
+          # Enhanced environment setup
+          $env:PYTHONPATH = "$env:pythonLocation"
+          $env:PATH = "$env:pythonLocation;$env:pythonLocation\Scripts;$env:pythonLocation\Library\bin;$env:PATH"
+
+          # Find and set UCRT path
+          $ucrtPaths = @(
+            "${env:ProgramFiles(x86)}\Windows Kits\10\Redist\10.0.22621.0\ucrt\DLLs\x64",
+            "${env:ProgramFiles}\Windows Kits\10\Redist\ucrt\DLLs\x64",
+            "C:\Program Files (x86)\Windows Kits\10\Redist\ucrt\DLLs\x64"
+          )
+
+          foreach ($path in $ucrtPaths) {
+            if (Test-Path $path) {
+              Write-Host "Found UCRT DLLs at: $path"
+              $env:PATH = "$path;$env:PATH"
+              break
+            }
+          }
+
+          # Debug info
           python -c "import sys; print('Python executable:', sys.executable)"
-          python -c "import sys; print('Python path:', sys.path)"
           python -c "import PyQt6; print('PyQt6 location:', PyQt6.__file__)"
 
-          # Clean build
+          # Build with PyInstaller
           pyinstaller --clean --noconfirm --log-level=INFO main.spec
-        shell: bash
+        shell: pwsh
 
-      # Linux-specific build with additional dependencies
       - name: Build with PyInstaller (Linux)
         if: runner.os == 'Linux'
         run: |
-          # Install additional dependencies needed for Qt6/XCB integration
-          sudo apt-get install -y \
-            libxcb-render-util0 libxcb-image0 libxcb-icccm4 \
-            libxcb-keysyms1 libxcb-cursor0
-            
-          # Print debug info
+          # Debug info
           python -c "import sys; print('Python executable:', sys.executable)"
-          python -c "import sys; print('Python path:', sys.path)"
           python -c "import PyQt6; print('PyQt6 location:', PyQt6.__file__)"
 
           # Clean build
           pyinstaller --clean --noconfirm --log-level=INFO main.spec
         shell: bash
 
-      # Create platform-specific packages (simplified)
+      - name: Build with PyInstaller (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          # Debug info
+          python -c "import sys; print('Python executable:', sys.executable)"
+          python -c "import PyQt6; print('PyQt6 location:', PyQt6.__file__)"
+
+          # Clean build
+          pyinstaller --clean --noconfirm --log-level=INFO main.spec
+        shell: bash
+
+      # Package applications
+      - name: Package Windows executable
+        if: runner.os == 'Windows'
+        run: |
+          if (Test-Path dist\userchrome-loader.exe) {
+            $fileInfo = Get-Item dist\userchrome-loader.exe
+            Write-Host "Windows executable size: $($fileInfo.Length) bytes"
+
+            # Rename executable
+            Rename-Item -Path dist\userchrome-loader.exe -NewName userchrome-loader-windows.exe
+
+            # Create README
+            $readmeContent = @"
+UserChrome Loader for Windows
+
+Requirements:
+- Windows 10 version 1903 or later
+- Microsoft Visual C++ Redistributable 2015-2022 (x64)
+  Download from: https://aka.ms/vs/17/release/vc_redist.x64.exe
+
+If you encounter "Missing DLL" errors, please install the VC++ Redistributable.
+"@
+            Set-Content -Path "dist\README.txt" -Value $readmeContent
+          } else {
+            Write-Error "Windows executable not found!"
+            exit 1
+          }
+        shell: pwsh
+
       - name: Create Linux AppImage
         if: runner.os == 'Linux'
         run: |
@@ -99,16 +176,12 @@ jobs:
           Categories=Utility;
           EOF
 
-          # Copy icon
+          # Create icon (placeholder if needed)
           if [ -f "assets/icon.png" ]; then
             cp assets/icon.png UserChrome-Loader.AppDir/userchrome-loader.png
           else
-            # Create minimal placeholder
-            python -c "
-          from PIL import Image
-          img = Image.new('RGBA', (256, 256), (70, 130, 180, 255))
-          img.save('UserChrome-Loader.AppDir/userchrome-loader.png')
-          " || echo "Could not create icon, using touch"
+            # Create minimal placeholder icon
+            convert -size 256x256 xc:lightblue UserChrome-Loader.AppDir/userchrome-loader.png 2>/dev/null || \
             touch UserChrome-Loader.AppDir/userchrome-loader.png
           fi
 
@@ -122,49 +195,56 @@ jobs:
           EOF
           chmod +x UserChrome-Loader.AppDir/AppRun
 
-          # Build AppImage with explicit output name
-          ./appimagetool UserChrome-Loader.AppDir userchrome-loader-linux.AppImage
+          # Build AppImage
+          ARCH=x86_64 ./appimagetool UserChrome-Loader.AppDir userchrome-loader-linux.AppImage
 
-          # Move AppImage directly to dist folder
+          # Move to dist
           mkdir -p dist
           mv userchrome-loader-linux.AppImage dist/
-
-      - name: Package Windows executable
-        if: runner.os == 'Windows'
-        run: |
-          mkdir -p dist/windows
-          cp dist/userchrome-loader.exe dist/windows/userchrome-loader-windows.exe
-        shell: bash
 
       - name: Package macOS app
         if: runner.os == 'macOS'
         run: |
-          mkdir -p dist/macos
           if [ -d "dist/UserChrome Loader.app" ]; then
-            cp -r "dist/UserChrome Loader.app" "dist/macos/UserChrome Loader.app"
+            # Create DMG
+            hdiutil create -volname "UserChrome Loader" -srcfolder "dist/UserChrome Loader.app" -ov -format UDZO dist/userchrome-loader-macos.dmg
           else
-            echo "Warning: App bundle not found, using executable"
-            cp dist/userchrome-loader dist/macos/userchrome-loader-macos
+            echo "Warning: App bundle not found"
+            if [ -f "dist/userchrome-loader" ]; then
+              mv dist/userchrome-loader dist/userchrome-loader-macos
+            else
+              echo "Error: No macOS executable found"
+              exit 1
+            fi
           fi
 
-      # Create archives (only for Windows and macOS)
-      - name: Create distribution archives
-        run: |
-          cd dist
-          if [ "${{ runner.os }}" == "Windows" ]; then
-            powershell -Command "Compress-Archive -Path windows/* -DestinationPath userchrome-loader-windows.zip"
-          elif [ "${{ runner.os }}" == "macOS" ]; then
-            zip -r userchrome-loader-macos.zip macos/
-          fi
-        shell: bash
-
-      - name: Upload artifacts
+      # Upload artifacts
+      - name: Upload artifacts (Windows)
+        if: runner.os == 'Windows'
         uses: actions/upload-artifact@v4
         with:
-          name: userchrome-loader-${{ runner.os }}
+          name: userchrome-loader-Windows
           path: |
-            dist/*.zip
-            dist/*.AppImage
+            dist/userchrome-loader-windows.exe
+            dist/README.txt
+          retention-days: 90
+
+      - name: Upload artifacts (Linux)
+        if: runner.os == 'Linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: userchrome-loader-Linux
+          path: dist/userchrome-loader-linux.AppImage
+          retention-days: 90
+
+      - name: Upload artifacts (macOS)
+        if: runner.os == 'macOS'
+        uses: actions/upload-artifact@v4
+        with:
+          name: userchrome-loader-macOS
+          path: |
+            dist/userchrome-loader-macos.dmg
+            dist/*.app
           retention-days: 90
 
   release:
@@ -177,15 +257,18 @@ jobs:
           path: artifacts
 
       - name: List artifacts
-        run: find artifacts -type f -name "*.zip" -o -name "*.AppImage" | sort
+        run: |
+          echo "Downloaded artifacts:"
+          find artifacts -type f | sort
 
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
           files: |
-            artifacts/**/*.zip
+            artifacts/**/*.exe
             artifacts/**/*.AppImage
+            artifacts/**/*.dmg
           name: "UserChrome Loader ${{ github.ref_name }}"
-          token: ${{ github.token }}
+          token: ${{ secrets.GITHUB_TOKEN }}
           draft: false
           prerelease: false

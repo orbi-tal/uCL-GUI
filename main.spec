@@ -6,129 +6,11 @@ from pathlib import Path
 def get_platform():
     return platform.system().lower()
 
-def get_platform_libraries():
-    """Get platform-specific libraries that need to be explicitly included"""
-    platform_name = get_platform()
-    binaries = []
-
-    if platform_name == 'windows':
-        # Windows: Include only essential Python and runtime DLLs
-        py_version = f"{sys.version_info.major}{sys.version_info.minor}"
-        required_dlls = [
-            # Python core DLL
-            f'python{py_version}.dll',
-            # Essential Microsoft Visual C++ Runtime DLLs
-            'vcruntime140.dll',
-            'msvcp140.dll',
-        ]
-
-        # Simplified search paths for Windows DLLs
-        search_paths = [
-            os.path.dirname(sys.executable),
-            os.path.join(sys.base_prefix, 'DLLs'),
-            os.path.join(os.environ.get('SYSTEMROOT', ''), 'System32'),
-        ]
-
-        # Find required DLLs
-        for dll in required_dlls:
-            for path in search_paths:
-                if not path:
-                    continue
-                dll_path = Path(path) / dll
-                if dll_path.exists():
-                    print(f"Found DLL: {dll_path}")
-                    binaries.append((str(dll_path), '.'))
-                    break
-
-        print(f"Total Windows DLLs found: {len(binaries)}")
-
-    elif platform_name == 'linux':
-        # Linux: Let PyInstaller handle most dependencies automatically
-        # Only include critical libraries that are commonly missed
-        py_version = f"{sys.version_info.major}.{sys.version_info.minor}"
-
-        import glob
-        lib_dirs = [
-            os.path.join(sys.base_prefix, 'lib'),
-            '/usr/lib/x86_64-linux-gnu',
-            '/usr/lib',
-        ]
-
-        # XCB libraries needed for Qt6
-        xcb_libs = [
-            'libxcb.so*',
-            'libxcb-render.so*',
-            'libxcb-render-util.so*',
-            'libxcb-image.so*',
-            'libxcb-icccm.so*',
-            'libxcb-keysyms.so*',
-            'libxcb-cursor.so*',
-            'libxcb-shape.so*',
-            'libxcb-shm.so*',
-            'libxcb-sync.so*',
-            'libxcb-xfixes.so*',
-            'libxcb-xkb.so*',
-            'libxcb-randr.so*',
-            'libxcb-xinerama.so*',
-            'libxkbcommon.so*',
-            'libxkbcommon-x11.so*',
-        ]
-
-        # Look for Python shared library and XCB libraries
-        for lib_dir in lib_dirs:
-            if not os.path.exists(lib_dir):
-                continue
-
-            # Look for Python library
-            for lib_path in glob.glob(os.path.join(lib_dir, f"libpython{py_version}*.so*")):
-                if os.path.isfile(lib_path):
-                    print(f"Found Linux library: {lib_path}")
-                    binaries.append((lib_path, '.'))
-                    break
-
-            # Look for XCB libraries
-            for xcb_lib in xcb_libs:
-                for lib_path in glob.glob(os.path.join(lib_dir, xcb_lib)):
-                    if os.path.isfile(lib_path) and os.access(lib_path, os.R_OK):
-                        print(f"Found XCB library: {lib_path}")
-                        binaries.append((lib_path, '.'))
-
-        print(f"Total Linux libraries found: {len(binaries)}")
-
-    elif platform_name == 'darwin':
-        # macOS: Let PyInstaller handle most dependencies
-        py_version = f"{sys.version_info.major}.{sys.version_info.minor}"
-
-        import glob
-        lib_dirs = [
-            os.path.join(sys.base_prefix, 'lib'),
-            '/usr/local/lib',
-            '/opt/homebrew/lib',
-        ]
-
-        # Only look for Python dylib if needed
-        for lib_dir in lib_dirs:
-            if not os.path.exists(lib_dir):
-                continue
-
-            for lib_path in glob.glob(os.path.join(lib_dir, f"libpython{py_version}*.dylib")):
-                if os.path.isfile(lib_path):
-                    print(f"Found macOS library: {lib_path}")
-                    binaries.append((lib_path, '.'))
-                    break
-
-        print(f"Total macOS libraries found: {len(binaries)}")
-
-    return binaries
-
 # Icon paths for different platforms
 icon_file = None
-
-# Check for platform-specific icons first
 assets_ico = os.path.join('assets', 'icon.ico')
 assets_icns = os.path.join('assets', 'icon.icns')
 assets_png = os.path.join('assets', 'icon.png')
-assets_svg = os.path.join('assets', 'icon.svg')
 
 # Platform-specific icon selection
 if get_platform() == 'windows' and os.path.exists(assets_ico):
@@ -137,25 +19,26 @@ elif get_platform() == 'darwin' and os.path.exists(assets_icns):
     icon_file = assets_icns
 elif os.path.exists(assets_png):
     icon_file = assets_png
-elif os.path.exists(assets_svg):
-    icon_file = assets_svg
+
+print(f"Using icon: {icon_file}")
 
 # PyInstaller Analysis configuration
 block_cipher = None
 
-# Configure the Analysis
+# Simplified Analysis - let PyInstaller handle dependencies automatically
 a = Analysis(
     ['src/launcher.py'],
     pathex=[],
-    binaries=get_platform_libraries(),
+    binaries=[],  # Let PyInstaller auto-detect binaries
     datas=[
         # Include all assets
         ('assets', 'assets'),
-        # Include only necessary style files
+        # Include style files
         ('src/ui/style/*.py', 'src/ui/style'),
         ('src/ui/style/fonts', 'src/ui/style/fonts'),
     ],
     exclude_binaries=False,
+    win_private_assemblies=False,  # Let Windows handle assemblies
     hiddenimports=[
         # PyQt6 core modules
         'PyQt6.QtWidgets',
@@ -163,7 +46,7 @@ a = Analysis(
         'PyQt6.QtGui',
         'PyQt6.sip',
 
-        # Application modules - using consistent absolute imports
+        # Application modules
         'src.launcher',
         'src.ui.main_window',
         'src.ui.workers.update_worker',
@@ -183,7 +66,7 @@ a = Analysis(
         'src.ui.presenters.import_presenter',
         'src.ui.presenters.manage_imports_presenter',
 
-        # Core application modules
+        # Core modules
         'src.core.archive',
         'src.core.download',
         'src.core.exceptions',
@@ -206,14 +89,16 @@ a = Analysis(
     ],
     hookspath=[],
     hooksconfig={},
-    runtime_hooks=['runtime_hook.py'],
+    runtime_hooks=['runtime_hook.py'] if os.path.exists('runtime_hook.py') else [],
     excludes=[
-        # Exclude unnecessary modules to reduce size
+        # Exclude unnecessary modules
         'tkinter',
         'matplotlib',
         'numpy',
         'pandas',
         'PIL',
+        'IPython',
+        'jupyter',
     ],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
@@ -228,9 +113,9 @@ pyz = PYZ(
     cipher=block_cipher
 )
 
-# Configure the EXE differently for macOS vs other platforms
+# Platform-specific executable configuration
 if get_platform() == 'darwin':
-    # macOS: Create onedir first, then bundle
+    # macOS: Create app bundle
     exe = EXE(
         pyz,
         a.scripts,
@@ -240,9 +125,12 @@ if get_platform() == 'darwin':
         debug=False,
         bootloader_ignore_signals=False,
         strip=False,
-        upx=False,  # Disable UPX for macOS
+        upx=False,  # Disable UPX on macOS
         console=False,
         disable_windowed_traceback=False,
+        target_arch=None,
+        codesign_identity=None,
+        entitlements_file=None,
         icon=icon_file,
     )
 
@@ -273,8 +161,9 @@ if get_platform() == 'darwin':
             'LSMinimumSystemVersion': '10.15.0',
         },
     )
+
 else:
-    # Windows/Linux: Create onefile executable
+    # Windows/Linux: Create single executable
     exe = EXE(
         pyz,
         a.scripts,
@@ -288,12 +177,15 @@ else:
         strip=False,
         upx=True,
         upx_exclude=[
+            # Don't compress graphics libraries
             'libGL.so*',
             'libGLX.so*',
             'libEGL.so*',
             'libGLU.so*',
             'libxcb*.so*',
             'libxkb*.so*',
+            # Don't compress DLLs on Windows
+            '*.dll',
         ],
         runtime_tmpdir=None,
         console=False,
