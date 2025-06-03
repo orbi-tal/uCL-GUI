@@ -31,7 +31,16 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y python3-gi python3-gi-cairo gir1.2-gtk-3.0 libgirepository1.0-dev
+          sudo apt-get install -y python3-gi python3-gi-cairo gir1.2-gtk-3.0 libgirepository1.0-dev \
+                               fuse libfuse2 libglib2.0-0 libcairo2 libxcb1 libgtk-3-0 \
+                               libgl1-mesa-glx libegl1 libxkbcommon0 libxcb-xinerama0 \
+                               libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-render-util0 \
+                               libxcb-randr0 libxcb-render0 libxcb-shape0 libxcb-shm0 \
+                               libxcb-sync1 libxcb-xfixes0 libxcb-xkb1 libxkbcommon-x11-0 \
+                               imagemagick
+          # Download appimagetool
+          wget -q https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage -O appimagetool
+          chmod +x appimagetool
 
       - name: Install dependencies
         run: |
@@ -90,15 +99,52 @@ jobs:
       - name: Create Linux package
         if: runner.os == 'Linux'
         run: |
-          # Test if the executable can run
-          dist/userchrome-loader --help || echo "Executable test failed, but continuing..."
-
-          # Rename the executable
-          mv dist/userchrome-loader dist/userchrome-loader-linux
-
-          # Create a zip archive for Linux
+          # Rename the executable for AppDir structure
+          mkdir -p UserChrome-Loader.AppDir/usr/bin
+          cp dist/userchrome-loader UserChrome-Loader.AppDir/usr/bin/
+          
+          # Create desktop file
+          cat > UserChrome-Loader.AppDir/userchrome-loader.desktop << EOF
+          [Desktop Entry]
+          Name=UserChrome Loader
+          Exec=userchrome-loader
+          Icon=userchrome-loader
+          Type=Application
+          Categories=Utility;
+          EOF
+          
+          # Copy icon (assuming there's an icon file in assets)
+          if [ -f "assets/icon.png" ]; then
+            cp assets/icon.png UserChrome-Loader.AppDir/userchrome-loader.png
+          else
+            # Create a placeholder icon if none exists
+            echo "No icon found, creating placeholder"
+            convert -size 256x256 xc:transparent UserChrome-Loader.AppDir/userchrome-loader.png
+          fi
+          
+          # Create AppRun script
+          cat > UserChrome-Loader.AppDir/AppRun << 'EOF'
+          #!/bin/bash
+          HERE="$(dirname "$(readlink -f "${0}")")"
+          export PATH="${HERE}/usr/bin:${PATH}"
+          export LD_LIBRARY_PATH="${HERE}/usr/lib:${LD_LIBRARY_PATH}"
+          export QT_PLUGIN_PATH="${HERE}/usr/lib/qt/plugins"
+          export QT_QPA_PLATFORM_PLUGIN_PATH="${HERE}/usr/lib/qt/plugins/platforms"
+          export QT_QPA_PLATFORM=xcb
+          exec "${HERE}/usr/bin/userchrome-loader" "$@"
+          EOF
+          chmod +x UserChrome-Loader.AppDir/AppRun
+          
+          # Create AppImage
+          ./appimagetool UserChrome-Loader.AppDir
+          
+          # Rename and move the AppImage to dist directory
+          mkdir -p dist/linux
+          mv UserChrome-Loader-x86_64.AppImage dist/linux/userchrome-loader-linux.AppImage
+          
+          # Create a zip archive of the AppImage
           cd dist
-          zip -r userchrome-loader-linux.zip userchrome-loader-linux
+          zip -r userchrome-loader-linux.zip linux
           cd ..
 
       - name: Create Windows package
@@ -158,6 +204,7 @@ jobs:
             artifacts/userchrome-loader-Linux/*.zip
             artifacts/userchrome-loader-Windows/*.zip
             artifacts/userchrome-loader-macOS/*.zip
+          name: "UserChrome Loader ${{ github.ref_name }}"
           token: ${{ github.token }}
           draft: false
           prerelease: false
