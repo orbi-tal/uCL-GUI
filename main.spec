@@ -12,208 +12,181 @@ def get_platform_libraries():
     binaries = []
 
     if platform_name == 'windows':
-        # Windows: Include Python DLL and runtime libraries
+        # Windows: Include only essential Python and runtime DLLs
         py_version = f"{sys.version_info.major}{sys.version_info.minor}"
         required_dlls = [
-            # Python core DLLs
+            # Python core DLL
             f'python{py_version}.dll',
-
-            # Microsoft Visual C++ Runtime DLLs
+            # Essential Microsoft Visual C++ Runtime DLLs
             'vcruntime140.dll',
-            'vcruntime140_1.dll',  # Required for 64-bit apps
             'msvcp140.dll',
-
-            # Universal C Runtime DLLs
-            'ucrtbase.dll',
-            'api-ms-win-crt-runtime-l1-1-0.dll',
-            'api-ms-win-crt-heap-l1-1-0.dll',
-            'api-ms-win-crt-math-l1-1-0.dll',
-            'api-ms-win-crt-stdio-l1-1-0.dll',
-            'api-ms-win-crt-locale-l1-1-0.dll',
-            'api-ms-win-crt-string-l1-1-0.dll',
-            'api-ms-win-crt-convert-l1-1-0.dll',
-            'api-ms-win-crt-filesystem-l1-1-0.dll',
-            'api-ms-win-crt-environment-l1-1-0.dll',
-            'api-ms-win-crt-process-l1-1-0.dll',
-            'api-ms-win-crt-time-l1-1-0.dll',
-            'api-ms-win-crt-utility-l1-1-0.dll',
         ]
 
-        # Search paths for Windows DLLs, ordered by priority
+        # Simplified search paths for Windows DLLs
         search_paths = [
             os.path.dirname(sys.executable),
-            sys.base_prefix,
             os.path.join(sys.base_prefix, 'DLLs'),
-            os.path.join(sys.base_prefix, 'Library', 'bin'),
-            os.environ.get('SYSTEMROOT', ''),
             os.path.join(os.environ.get('SYSTEMROOT', ''), 'System32'),
-            os.path.join(os.environ.get('SYSTEMROOT', ''), 'SysWOW64'),
         ]
 
-        # Track DLLs we've already found to avoid duplicates
-        found_dlls = set()
-
-        # Find all required DLLs
+        # Find required DLLs
         for dll in required_dlls:
-            if dll in found_dlls:
-                continue
-
             for path in search_paths:
                 if not path:
                     continue
-
                 dll_path = Path(path) / dll
                 if dll_path.exists():
                     print(f"Found DLL: {dll_path}")
                     binaries.append((str(dll_path), '.'))
-                    found_dlls.add(dll)
                     break
 
         print(f"Total Windows DLLs found: {len(binaries)}")
 
     elif platform_name == 'linux':
-        # Linux: Include libpython and other critical libraries
-        # Note: When building for AppImage, most library dependencies will be handled by the AppImage format
+        # Linux: Let PyInstaller handle most dependencies automatically
+        # Only include critical libraries that are commonly missed
         py_version = f"{sys.version_info.major}.{sys.version_info.minor}"
-        lib_patterns = [
-            f"libpython{py_version}.so*",
-            f"libpython{py_version}m.so*",
-            "libcurl.so*",
-            "libarchive.so*",
-            "libEGL.so*",  # EGL library for PyQt6
-            "libGL.so*",   # OpenGL library (replaces libgl1-mesa-glx)
-            "libGLX.so*",  # GLX library for X11
-            "libGLU.so*",  # GLU utilities
-        ]
 
-        # Common library locations on Linux
+        import glob
         lib_dirs = [
             os.path.join(sys.base_prefix, 'lib'),
+            '/usr/lib/x86_64-linux-gnu',
             '/usr/lib',
-            '/usr/lib64',
-            '/lib',
-            '/lib64',
-            '/usr/local/lib',
         ]
 
-        # Add more paths from environment if available
-        if 'DYLD_LIBRARY_PATH' in os.environ:
-            for path in os.environ['DYLD_LIBRARY_PATH'].split(':'):
-                if path and path not in lib_dirs:
-                    lib_dirs.append(path)
-
-        # Standard library paths should be sufficient
-
-        # Find libraries using glob patterns
-        import glob
+        # Only look for Python shared library if needed
         for lib_dir in lib_dirs:
             if not os.path.exists(lib_dir):
                 continue
 
-            for pattern in lib_patterns:
-                for lib_path in glob.glob(os.path.join(lib_dir, pattern)):
-                    if os.path.isfile(lib_path) and os.access(lib_path, os.R_OK):
-                        print(f"Found Linux library: {lib_path}")
-                        binaries.append((lib_path, '.'))
+            for lib_path in glob.glob(os.path.join(lib_dir, f"libpython{py_version}*.so*")):
+                if os.path.isfile(lib_path):
+                    print(f"Found Linux library: {lib_path}")
+                    binaries.append((lib_path, '.'))
+                    break
 
         print(f"Total Linux libraries found: {len(binaries)}")
 
     elif platform_name == 'darwin':
-        # macOS: Include Python dylib and other critical libraries
+        # macOS: Let PyInstaller handle most dependencies
         py_version = f"{sys.version_info.major}.{sys.version_info.minor}"
-        lib_patterns = [
-            f"libpython{py_version}.dylib",
-            f"libpython{py_version}m.dylib",
-            "libcurl.*.dylib",
-            "libarchive.*.dylib",
-        ]
 
-        # Common library locations on macOS
+        import glob
         lib_dirs = [
             os.path.join(sys.base_prefix, 'lib'),
-            '/usr/lib',
             '/usr/local/lib',
             '/opt/homebrew/lib',
         ]
 
-        # Add more paths from environment if available
-        if 'DYLD_LIBRARY_PATH' in os.environ:
-            for path in os.environ['DYLD_LIBRARY_PATH'].split(':'):
-                if path and path not in lib_dirs:
-                    lib_dirs.append(path)
-
-        # Find libraries using glob patterns
-        import glob
+        # Only look for Python dylib if needed
         for lib_dir in lib_dirs:
             if not os.path.exists(lib_dir):
                 continue
 
-            for pattern in lib_patterns:
-                for lib_path in glob.glob(os.path.join(lib_dir, pattern)):
-                    if os.path.isfile(lib_path) and os.access(lib_path, os.R_OK):
-                        print(f"Found macOS library: {lib_path}")
-                        binaries.append((lib_path, '.'))
+            for lib_path in glob.glob(os.path.join(lib_dir, f"libpython{py_version}*.dylib")):
+                if os.path.isfile(lib_path):
+                    print(f"Found macOS library: {lib_path}")
+                    binaries.append((lib_path, '.'))
+                    break
 
         print(f"Total macOS libraries found: {len(binaries)}")
 
     return binaries
 
 # Icon paths for different platforms
-icon_file = os.path.join('assets', 'icon.svg')  # Default SVG icon
+icon_file = None
 
-# Check for icons in assets directory
+# Check for platform-specific icons first
 assets_ico = os.path.join('assets', 'icon.ico')
 assets_icns = os.path.join('assets', 'icon.icns')
 assets_png = os.path.join('assets', 'icon.png')
+assets_svg = os.path.join('assets', 'icon.svg')
 
-# Platform-specific icon file
+# Platform-specific icon selection
 if get_platform() == 'windows' and os.path.exists(assets_ico):
     icon_file = assets_ico
 elif get_platform() == 'darwin' and os.path.exists(assets_icns):
     icon_file = assets_icns
 elif os.path.exists(assets_png):
     icon_file = assets_png
+elif os.path.exists(assets_svg):
+    icon_file = assets_svg
 
 # PyInstaller Analysis configuration
 block_cipher = None
 
-# Configure the Analysis with our runtime hook
+# Configure the Analysis
 a = Analysis(
     ['src/launcher.py'],
     pathex=[],
     binaries=get_platform_libraries(),
     datas=[
+        # Include all assets
         ('assets', 'assets'),
-        ('src/ui/style', 'src/ui/style'),
+        # Include only necessary style files
+        ('src/ui/style/*.py', 'src/ui/style'),
+        ('src/ui/style/fonts', 'src/ui/style/fonts'),
     ],
-    exclude_binaries=False,  # Don't exclude binaries to ensure all dependencies are included
+    exclude_binaries=False,
     hiddenimports=[
-        # Both forms of module imports
+        # PyQt6 core modules
         'PyQt6.QtWidgets',
         'PyQt6.QtCore',
         'PyQt6.QtGui',
         'PyQt6.sip',
-        'pycurl',
-        'libarchive',
-        # Traditional import format
+
+        # Application modules - using consistent absolute imports
+        'src.launcher',
+        'src.ui.main_window',
         'src.ui.workers.update_worker',
         'src.ui.workers.url_import_worker',
         'src.ui.dialogs.update_dialog',
         'src.ui.dialogs.loading_dialog',
         'src.ui.dialogs.welcome_dialog',
-        # Relative import format
-        'src.ui.workers',
-        'src.ui.dialogs',
-        'src.ui.main_window',
-        'src.core.config',
-        'src.core.profile_manager',
-        'src.core.style_manager',
-        'src.core.utils',
+        'src.ui.dialogs.confirm_dialog',
+        'src.ui.dialogs.css_selection_dialog',
+        'src.ui.dialogs.file_dialogs',
+        'src.ui.dialogs.subfolder_dialog',
+        'src.ui.style.style',
+        'src.ui.style.icons',
+        'src.ui.style.animated_button',
+        'src.ui.style.shadow_utils',
+        'src.ui.presenters.main_presenter',
+        'src.ui.presenters.import_presenter',
+        'src.ui.presenters.manage_imports_presenter',
+
+        # Core application modules
+        'src.core.archive',
+        'src.core.download',
+        'src.core.exceptions',
+        'src.core.mod',
+        'src.core.models',
+        'src.core.profile',
+        'src.core.userchrome',
+
+        # Application services
+        'src.application.import_service',
+        'src.application.profile_service',
+        'src.application.settings',
+        'src.application.update_service',
+
+        # Infrastructure
+        'src.infrastructure.config_store',
+        'src.infrastructure.file_manager',
+        'src.infrastructure.github_api',
+        'src.infrastructure.gitlab_api',
     ],
     hookspath=[],
     hooksconfig={},
-    runtime_hooks=['runtime_hook.py'],  # Include our runtime hook
-    excludes=[],
+    runtime_hooks=['runtime_hook.py'],
+    excludes=[
+        # Exclude unnecessary modules to reduce size
+        'tkinter',
+        'matplotlib',
+        'numpy',
+        'pandas',
+        'PIL',
+    ],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
     cipher=block_cipher,
@@ -227,7 +200,7 @@ pyz = PYZ(
     cipher=block_cipher
 )
 
-# Configure the EXE for onefile mode
+# Configure the EXE
 exe = EXE(
     pyz,
     a.scripts,
@@ -241,10 +214,12 @@ exe = EXE(
     strip=False,
     upx=True,
     upx_exclude=[
-        'libGL.so*',   # Don't compress OpenGL libraries
+        # Don't compress libraries that might have issues
+        'libGL.so*',
         'libGLX.so*',
         'libEGL.so*',
         'libGLU.so*',
+        '*.dylib',
     ],
     runtime_tmpdir=None,
     console=False,
@@ -255,22 +230,21 @@ exe = EXE(
     icon=icon_file,
 )
 
-# macOS specific configuration
+# macOS app bundle configuration (only if building on macOS)
 if get_platform() == 'darwin':
-    app_name = 'UserChrome Loader.app'
-    info_plist = {
-        'CFBundleShortVersionString': '1.0.0',
-        'CFBundleExecutable': 'userchrome-loader',
-        'CFBundleName': 'UserChrome Loader',
-        'CFBundleDisplayName': 'UserChrome Loader',
-        'NSHighResolutionCapable': True,
-        'NSRequiresAquaSystemAppearance': False,
-    }
-    
     app = BUNDLE(
         exe,
-        name=app_name,
+        name='UserChrome Loader.app',
         icon=icon_file,
         bundle_identifier='com.orbital.userchrome-loader',
-        info_plist=info_plist,
+        info_plist={
+            'CFBundleShortVersionString': '1.0.0',
+            'CFBundleVersion': '1.0.0',
+            'CFBundleExecutable': 'userchrome-loader',
+            'CFBundleName': 'UserChrome Loader',
+            'CFBundleDisplayName': 'UserChrome Loader',
+            'NSHighResolutionCapable': True,
+            'NSRequiresAquaSystemAppearance': False,
+            'LSMinimumSystemVersion': '10.15.0',
+        },
     )

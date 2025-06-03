@@ -26,86 +26,50 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
-      # Linux-specific dependencies
+      # Linux-specific dependencies (simplified)
       - name: Install Linux system dependencies
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y python3-gi python3-gi-cairo gir1.2-gtk-3.0 libgirepository1.0-dev \
-                               fuse libfuse2 libglib2.0-0 libcairo2 libxcb1 libgtk-3-0 \
-                               libgl1 libegl1 libglu1-mesa libglx-mesa0 libxkbcommon0 libxcb-xinerama0 \
-                               libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-render-util0 \
-                               libxcb-randr0 libxcb-render0 libxcb-shape0 libxcb-shm0 \
-                               libxcb-sync1 libxcb-xfixes0 libxcb-xkb1 libxkbcommon-x11-0 \
-                               imagemagick
-          # Download appimagetool
-          wget -q https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage -O appimagetool
-          chmod +x appimagetool
+          sudo apt-get install -y \
+            libgl1 libegl1 libglu1-mesa libglx-mesa0 \
+            libxcb1 libxkbcommon0 libxcb-xinerama0 \
+            libxcb-randr0 libxcb-render0 libxcb-shape0 \
+            libxkbcommon-x11-0 \
+            fuse libfuse2
 
-      - name: Install dependencies
+      - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
           pip install pyinstaller
 
-      # Build with PyInstaller
-      - name: Build with PyInstaller (Linux)
-        if: runner.os == 'Linux'
+      # Build with PyInstaller (simplified)
+      - name: Build with PyInstaller
         run: |
-          export OPTIMIZE=1
-          # Install required OpenGL libraries for PyQt6
-          sudo apt-get update
-          sudo apt-get install -y libgl1 libegl1 libglu1-mesa libglx-mesa0
-          # Print Python paths and debug info
-          python -c "import sys; print(sys.path)"
-          python -c "import zipfile; print(f'zipfile: {zipfile.__file__}')"
-          python -c "import tarfile; print(f'tarfile: {tarfile.__file__}')"
-          # Build with detailed logging
-          pyinstaller --clean --noconfirm --log-level=DEBUG main.spec
+          # Print debug info
+          python -c "import sys; print('Python executable:', sys.executable)"
+          python -c "import sys; print('Python path:', sys.path)"
+          python -c "import PyQt6; print('PyQt6 location:', PyQt6.__file__)"
+
+          # Clean build
+          pyinstaller --clean --noconfirm --log-level=INFO main.spec
         shell: bash
 
-      - name: Build with PyInstaller (macOS)
-        if: runner.os == 'macOS'
-        run: |
-          export OPTIMIZE=1
-          # Skip libarchive installation - application works without it
-          # Just use Python's built-in zipfile and tarfile modules
-
-          # Print Python paths and debug info
-          python -c "import sys; print(sys.path)"
-          python -c "import zipfile; print(f'zipfile: {zipfile.__file__}')"
-          python -c "import tarfile; print(f'tarfile: {tarfile.__file__}')"
-
-          # Build with detailed logging (no hidden-import flags when using spec file)
-          pyinstaller --clean --noconfirm --log-level=DEBUG main.spec
-        shell: bash
-
-      - name: Build with PyInstaller (Windows)
-        if: runner.os == 'Windows'
-        run: |
-          $env:OPTIMIZE = 1
-          $env:PYTHONPATH = $env:pythonLocation
-          $env:PATH = "$env:pythonLocation;$env:pythonLocation\Scripts;$env:PATH"
-
-          # Print Python paths and debug info
-          python -c "import sys; print(sys.path)"
-          python -c "import zipfile; print(f'zipfile: {zipfile.__file__}')"
-          python -c "import tarfile; print(f'tarfile: {tarfile.__file__}')"
-
-          # Build with PyInstaller with more verbose output (no hidden-import flags when using spec file)
-          pyinstaller --clean --noconfirm --log-level=DEBUG main.spec
-        shell: pwsh
-
-      # Create platform-specific packages
-      - name: Create Linux package
+      # Create platform-specific packages (simplified)
+      - name: Create Linux AppImage
         if: runner.os == 'Linux'
         run: |
-          # Rename the executable for AppDir structure
+          # Download appimagetool
+          wget -q https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage -O appimagetool
+          chmod +x appimagetool
+
+          # Create AppDir structure
           mkdir -p UserChrome-Loader.AppDir/usr/bin
           cp dist/userchrome-loader UserChrome-Loader.AppDir/usr/bin/
-          
+
           # Create desktop file
-          cat > UserChrome-Loader.AppDir/userchrome-loader.desktop << EOF
+          cat > UserChrome-Loader.AppDir/userchrome-loader.desktop << 'EOF'
           [Desktop Entry]
           Name=UserChrome Loader
           Exec=userchrome-loader
@@ -113,67 +77,65 @@ jobs:
           Type=Application
           Categories=Utility;
           EOF
-          
-          # Copy icon (assuming there's an icon file in assets)
+
+          # Copy icon
           if [ -f "assets/icon.png" ]; then
             cp assets/icon.png UserChrome-Loader.AppDir/userchrome-loader.png
           else
-            # Create a placeholder icon if none exists
-            echo "No icon found, creating placeholder"
-            convert -size 256x256 xc:transparent UserChrome-Loader.AppDir/userchrome-loader.png
+            # Create minimal placeholder
+            python -c "
+          from PIL import Image
+          img = Image.new('RGBA', (256, 256), (70, 130, 180, 255))
+          img.save('UserChrome-Loader.AppDir/userchrome-loader.png')
+          " || echo "Could not create icon, using touch"
+            touch UserChrome-Loader.AppDir/userchrome-loader.png
           fi
-          
-          # Create AppRun script
+
+          # Create AppRun
           cat > UserChrome-Loader.AppDir/AppRun << 'EOF'
           #!/bin/bash
           HERE="$(dirname "$(readlink -f "${0}")")"
           export PATH="${HERE}/usr/bin:${PATH}"
           export LD_LIBRARY_PATH="${HERE}/usr/lib:${LD_LIBRARY_PATH}"
-          export QT_PLUGIN_PATH="${HERE}/usr/lib/qt/plugins"
-          export QT_QPA_PLATFORM_PLUGIN_PATH="${HERE}/usr/lib/qt/plugins/platforms"
-          export QT_QPA_PLATFORM=xcb
           exec "${HERE}/usr/bin/userchrome-loader" "$@"
           EOF
           chmod +x UserChrome-Loader.AppDir/AppRun
-          
-          # Create AppImage
-          ./appimagetool UserChrome-Loader.AppDir
-          
-          # Rename and move the AppImage to dist directory
-          mkdir -p dist/linux
-          mv UserChrome-Loader-x86_64.AppImage dist/linux/userchrome-loader-linux.AppImage
-          
-          # Create a zip archive of the AppImage
-          cd dist
-          zip -r userchrome-loader-linux.zip linux
-          cd ..
 
-      - name: Create Windows package
+          # Build AppImage
+          ./appimagetool UserChrome-Loader.AppDir
+
+          # Move to dist
+          mkdir -p dist/linux
+          mv UserChrome-Loader-*.AppImage dist/linux/userchrome-loader-linux.AppImage
+
+      - name: Package Windows executable
         if: runner.os == 'Windows'
         run: |
-          # Rename the executable
-          mv dist/userchrome-loader.exe dist/userchrome-loader-windows.exe
-          # Create a zip archive for Windows
-          cd dist && powershell Compress-Archive -Path userchrome-loader-windows.exe -DestinationPath userchrome-loader-windows.zip
+          mkdir -p dist/windows
+          cp dist/userchrome-loader.exe dist/windows/userchrome-loader-windows.exe
+        shell: bash
 
-      - name: Create macOS package
+      - name: Package macOS app
         if: runner.os == 'macOS'
         run: |
-          # First rename the app bundle
-          mv dist/userchrome-loader.app dist/userchrome-loader-macos.app
-          # Create a zip archive of the app bundle to preserve its structure
-          cd dist && zip -r userchrome-loader-macos.zip userchrome-loader-macos.app && cd ..
+          mkdir -p dist/macos
+          if [ -d "dist/UserChrome Loader.app" ]; then
+            cp -r "dist/UserChrome Loader.app" "dist/macos/UserChrome Loader.app"
+          else
+            echo "Warning: App bundle not found, using executable"
+            cp dist/userchrome-loader dist/macos/userchrome-loader-macos
+          fi
 
-      - name: Prepare artifacts for upload
+      # Create archives
+      - name: Create distribution archives
         run: |
-          mkdir -p userchrome-loader-${{ runner.os }}
+          cd dist
           if [ "${{ runner.os }}" == "Linux" ]; then
-            cp dist/userchrome-loader-linux.zip userchrome-loader-${{ runner.os }}/
+            zip -r userchrome-loader-linux.zip linux/
           elif [ "${{ runner.os }}" == "Windows" ]; then
-            cp dist/userchrome-loader-windows.zip userchrome-loader-${{ runner.os }}/
+            powershell -Command "Compress-Archive -Path windows/* -DestinationPath userchrome-loader-windows.zip"
           elif [ "${{ runner.os }}" == "macOS" ]; then
-            # Copy the zip file
-            cp dist/userchrome-loader-macos.zip userchrome-loader-${{ runner.os }}/
+            zip -r userchrome-loader-macos.zip macos/
           fi
         shell: bash
 
@@ -181,7 +143,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: userchrome-loader-${{ runner.os }}
-          path: userchrome-loader-${{ runner.os }}
+          path: |
+            dist/*.zip
           retention-days: 90
 
   release:
@@ -193,18 +156,13 @@ jobs:
         with:
           path: artifacts
 
-      - name: List downloaded artifacts
-        run: |
-          ls -la artifacts/
-          find artifacts -type f | sort
+      - name: List artifacts
+        run: find artifacts -type f -name "*.zip" | sort
 
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
-          files: |
-            artifacts/userchrome-loader-Linux/*.zip
-            artifacts/userchrome-loader-Windows/*.zip
-            artifacts/userchrome-loader-macOS/*.zip
+          files: artifacts/*/*.zip
           name: "UserChrome Loader ${{ github.ref_name }}"
           token: ${{ github.token }}
           draft: false
