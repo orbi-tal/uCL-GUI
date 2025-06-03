@@ -184,8 +184,7 @@ a = Analysis(
     binaries=get_platform_libraries(),
     datas=[
         ('assets', 'assets'),
-        ('src/ui/icons', 'src/ui/icons'),
-        ('src/ui/styles', 'src/ui/styles'),
+        ('src/ui/style', 'src/ui/style'),
     ],
     exclude_binaries=False,  # Don't exclude binaries to ensure all dependencies are included
     hiddenimports=[
