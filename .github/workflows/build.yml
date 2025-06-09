@@ -53,7 +53,7 @@ jobs:
           echo "PATH=$env:PATH" >> $env:GITHUB_ENV
         shell: pwsh
 
-      # Linux dependencies (simplified and fixed)
+      # Linux dependencies
       - name: Install Linux system dependencies
         if: runner.os == 'Linux'
         run: |
@@ -73,88 +73,176 @@ jobs:
           pip install -r requirements.txt
           pip install pyinstaller
 
-      # Enhanced Windows build
+      # Setup for UCRT hooks on Windows
+      - name: Setup PyInstaller hooks directory for Windows
+        if: runner.os == 'Windows'
+        run: |
+          # Create hooks directory
+          New-Item -ItemType Directory -Path "hooks" -Force
+          
+          # Copy pre-created hook files from workflow directory
+          Copy-Item ".github/workflows/hooks/hook-ucrt.py" -Destination "hooks/hook-ucrt.py"
+          Copy-Item ".github/workflows/hooks/runtime_hook.py" -Destination "runtime_hook.py"
+          
+          # Verify files were copied
+          if (Test-Path "hooks/hook-ucrt.py" -and Test-Path "runtime_hook.py") {
+            Write-Host "Hook files successfully copied"
+          } else {
+            Write-Error "Failed to copy hook files"
+            exit 1
+          }
+        shell: pwsh
+
+      # Build Windows executable
       - name: Build with PyInstaller (Windows)
         if: runner.os == 'Windows'
         run: |
-          # Enhanced environment setup
-          $env:PYTHONPATH = "$env:pythonLocation"
-          $env:PATH = "$env:pythonLocation;$env:pythonLocation\Scripts;$env:pythonLocation\Library\bin;$env:PATH"
-
-          # Find and set UCRT path
-          $ucrtPaths = @(
-            "${env:ProgramFiles(x86)}\Windows Kits\10\Redist\10.0.22621.0\ucrt\DLLs\x64",
-            "${env:ProgramFiles}\Windows Kits\10\Redist\ucrt\DLLs\x64",
-            "C:\Program Files (x86)\Windows Kits\10\Redist\ucrt\DLLs\x64"
-          )
-
-          foreach ($path in $ucrtPaths) {
-            if (Test-Path $path) {
-              Write-Host "Found UCRT DLLs at: $path"
-              $env:PATH = "$path;$env:PATH"
-              break
-            }
-          }
-
           # Debug info
           python -c "import sys; print('Python executable:', sys.executable)"
           python -c "import PyQt6; print('PyQt6 location:', PyQt6.__file__)"
 
-          # Build with PyInstaller
-          pyinstaller --clean --noconfirm --log-level=INFO main.spec
+          # Build with additional hooks
+          $env:PYTHONOPTIMIZE = 1
+          pyinstaller --clean --noconfirm --log-level=INFO --additional-hooks-dir=hooks --runtime-hook=runtime_hook.py main.spec
         shell: pwsh
 
+      # Build Linux executable
       - name: Build with PyInstaller (Linux)
         if: runner.os == 'Linux'
         run: |
-          # Debug info
           python -c "import sys; print('Python executable:', sys.executable)"
           python -c "import PyQt6; print('PyQt6 location:', PyQt6.__file__)"
-
-          # Clean build
           pyinstaller --clean --noconfirm --log-level=INFO main.spec
         shell: bash
 
+      # Build macOS executable
       - name: Build with PyInstaller (macOS)
         if: runner.os == 'macOS'
         run: |
-          # Debug info
           python -c "import sys; print('Python executable:', sys.executable)"
           python -c "import PyQt6; print('PyQt6 location:', PyQt6.__file__)"
-
-          # Clean build
           pyinstaller --clean --noconfirm --log-level=INFO main.spec
         shell: bash
 
-      # Package applications
-      - name: Package Windows executable
+      # Test Windows executable
+      - name: Test Windows executable
         if: runner.os == 'Windows'
         run: |
           if (Test-Path dist\userchrome-loader.exe) {
             $fileInfo = Get-Item dist\userchrome-loader.exe
-            Write-Host "Windows executable size: $($fileInfo.Length) bytes"
+            Write-Host "Executable size: $($fileInfo.Length) bytes"
 
+            # Check for bundled DLLs
+            Write-Host "Checking for bundled DLLs..."
+            $exeDir = Split-Path $fileInfo.FullName
+            Get-ChildItem -Path $exeDir -Filter "*.dll" -ErrorAction SilentlyContinue | ForEach-Object {
+              Write-Host "Found bundled DLL: $($_.Name)"
+            }
+            
+            # Check critical DLLs
+            $criticalDlls = @(
+              "ucrtbase.dll",
+              "api-ms-win-crt-runtime-l1-1-0.dll",
+              "api-ms-win-core-path-l1-1-0.dll"
+            )
+            
+            foreach ($dll in $criticalDlls) {
+              if (Test-Path "$exeDir\$dll") {
+                Write-Host "Critical DLL found: $dll" -ForegroundColor Green
+              } else {
+                Write-Host "Critical DLL missing: $dll" -ForegroundColor Yellow
+              }
+            }
+
+            # Try to run executable
+            try {
+              $processInfo = New-Object System.Diagnostics.ProcessStartInfo
+              $processInfo.FileName = $fileInfo.FullName
+              $processInfo.Arguments = "--version"
+              $processInfo.UseShellExecute = $false
+              $processInfo.RedirectStandardOutput = $true
+              $processInfo.RedirectStandardError = $true
+              $processInfo.CreateNoWindow = $true
+
+              $process = New-Object System.Diagnostics.Process
+              $process.StartInfo = $processInfo
+              $process.Start() | Out-Null
+
+              if (-not $process.WaitForExit(5000)) {
+                $process.Kill()
+                Write-Warning "Executable test timed out"
+              } else {
+                Write-Host "Executable appears to be working (exit code: $($process.ExitCode))"
+              }
+            } catch {
+              Write-Warning "Could not test executable: $($_.Exception.Message)"
+            }
+          } else {
+            Write-Error "Executable not found!"
+            exit 1
+          }
+        shell: pwsh
+
+      # Package Windows executable
+      - name: Package Windows executable
+        if: runner.os == 'Windows'
+        run: |
+          if (Test-Path dist\userchrome-loader.exe) {
             # Rename executable
             Rename-Item -Path dist\userchrome-loader.exe -NewName userchrome-loader-windows.exe
 
-            # Create README
-            $readmeContent = @"
-UserChrome Loader for Windows
+            # Create README without multi-line variables to avoid YAML issues
+            $readmeText = "UserChrome Loader for Windows`n`n"
+            $readmeText += "SYSTEM REQUIREMENTS:`n"
+            $readmeText += "- Windows 10 version 1903 (build 18362) or later`n"
+            $readmeText += "- Windows 11 (all versions)`n`n"
+            $readmeText += "DEPENDENCIES:`n"
+            $readmeText += "- Microsoft Visual C++ Redistributable 2015-2022 (x64)`n"
+            $readmeText += "  Download: https://aka.ms/vs/17/release/vc_redist.x64.exe`n`n"
+            $readmeText += "TROUBLESHOOTING:`n"
+            $readmeText += "If you get 'Missing DLL' or 'Application failed to start' errors:`n`n"
+            $readmeText += "1. Install/Reinstall VC++ Redistributable (link above)`n"
+            $readmeText += "2. Update Windows to the latest version`n"
+            $readmeText += "3. If on Windows 10, ensure you have version 1903 or later`n`n"
+            $readmeText += "WINDOWS 10 SPECIFIC NOTES:`n"
+            $readmeText += "- Older versions of Windows 10 (before 1903) may have compatibility issues`n"
+            $readmeText += "- The Universal C Runtime (UCRT) must be installed (usually via Windows Update)`n`n"
+            $readmeText += "For support, visit: [your support URL]"
+            Set-Content -Path "dist\README-Windows.txt" -Value $readmeText
 
-Requirements:
-- Windows 10 version 1903 or later
-- Microsoft Visual C++ Redistributable 2015-2022 (x64)
-  Download from: https://aka.ms/vs/17/release/vc_redist.x64.exe
-
-If you encounter "Missing DLL" errors, please install the VC++ Redistributable.
-"@
-            Set-Content -Path "dist\README.txt" -Value $readmeContent
+            # Create troubleshooting batch file without multi-line variables
+            $batchText = "@echo off`r`n"
+            $batchText += "echo UserChrome Loader - Windows Troubleshoot Helper`r`n"
+            $batchText += "echo.`r`n"
+            $batchText += "echo Checking system compatibility...`r`n"
+            $batchText += "echo.`r`n`r`n"
+            $batchText += "ver | find ""10.0"" >nul`r`n"
+            $batchText += "if %errorlevel%==0 (`r`n"
+            $batchText += "  echo Windows 10/11 detected - Good!`r`n"
+            $batchText += ") else (`r`n"
+            $batchText += "  echo WARNING: Windows version may not be supported`r`n"
+            $batchText += ")`r`n`r`n"
+            $batchText += "echo.`r`n"
+            $batchText += "echo Checking for VC++ Redistributable...`r`n"
+            $batchText += "reg query ""HKLM\SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x64"" /v Version >nul 2>&1`r`n"
+            $batchText += "if %errorlevel%==0 (`r`n"
+            $batchText += "  echo VC++ Redistributable found - Good!`r`n"
+            $batchText += ") else (`r`n"
+            $batchText += "  echo WARNING: VC++ Redistributable may not be installed`r`n"
+            $batchText += "  echo Download from: https://aka.ms/vs/17/release/vc_redist.x64.exe`r`n"
+            $batchText += ")`r`n`r`n"
+            $batchText += "echo.`r`n"
+            $batchText += "echo Attempting to run UserChrome Loader...`r`n"
+            $batchText += "echo.`r`n"
+            $batchText += "userchrome-loader-windows.exe"
+            Set-Content -Path "dist\run-with-troubleshooting.bat" -Value $batchText
           } else {
             Write-Error "Windows executable not found!"
             exit 1
           }
         shell: pwsh
 
+      # Create Linux AppImage
       - name: Create Linux AppImage
         if: runner.os == 'Linux'
         run: |
@@ -167,41 +255,36 @@ If you encounter "Missing DLL" errors, please install the VC++ Redistributable.
           cp dist/userchrome-loader UserChrome-Loader.AppDir/usr/bin/
 
           # Create desktop file
-          cat > UserChrome-Loader.AppDir/userchrome-loader.desktop << 'EOF'
-          [Desktop Entry]
-          Name=UserChrome Loader
-          Exec=userchrome-loader
-          Icon=userchrome-loader
-          Type=Application
-          Categories=Utility;
-          EOF
+          echo "[Desktop Entry]" > UserChrome-Loader.AppDir/userchrome-loader.desktop
+          echo "Name=UserChrome Loader" >> UserChrome-Loader.AppDir/userchrome-loader.desktop
+          echo "Exec=userchrome-loader" >> UserChrome-Loader.AppDir/userchrome-loader.desktop
+          echo "Icon=userchrome-loader" >> UserChrome-Loader.AppDir/userchrome-loader.desktop
+          echo "Type=Application" >> UserChrome-Loader.AppDir/userchrome-loader.desktop
+          echo "Categories=Utility;" >> UserChrome-Loader.AppDir/userchrome-loader.desktop
+          echo "Comment=Tool for managing Firefox userChrome customizations" >> UserChrome-Loader.AppDir/userchrome-loader.desktop
 
-          # Create icon (placeholder if needed)
+          # Create or copy icon
           if [ -f "assets/icon.png" ]; then
             cp assets/icon.png UserChrome-Loader.AppDir/userchrome-loader.png
           else
-            # Create minimal placeholder icon
-            convert -size 256x256 xc:lightblue UserChrome-Loader.AppDir/userchrome-loader.png 2>/dev/null || \
+            echo "Creating placeholder icon"
             touch UserChrome-Loader.AppDir/userchrome-loader.png
           fi
 
-          # Create AppRun
-          cat > UserChrome-Loader.AppDir/AppRun << 'EOF'
-          #!/bin/bash
-          HERE="$(dirname "$(readlink -f "${0}")")"
-          export PATH="${HERE}/usr/bin:${PATH}"
-          export LD_LIBRARY_PATH="${HERE}/usr/lib:${LD_LIBRARY_PATH}"
-          exec "${HERE}/usr/bin/userchrome-loader" "$@"
-          EOF
+          # Create AppRun script
+          echo "#!/bin/bash" > UserChrome-Loader.AppDir/AppRun
+          echo 'HERE="$(dirname "$(readlink -f "${0}")")"' >> UserChrome-Loader.AppDir/AppRun
+          echo 'export PATH="${HERE}/usr/bin:${PATH}"' >> UserChrome-Loader.AppDir/AppRun
+          echo 'export LD_LIBRARY_PATH="${HERE}/usr/lib:${LD_LIBRARY_PATH}"' >> UserChrome-Loader.AppDir/AppRun
+          echo 'exec "${HERE}/usr/bin/userchrome-loader" "$@"' >> UserChrome-Loader.AppDir/AppRun
           chmod +x UserChrome-Loader.AppDir/AppRun
 
           # Build AppImage
           ARCH=x86_64 ./appimagetool UserChrome-Loader.AppDir userchrome-loader-linux.AppImage
-
-          # Move to dist
           mkdir -p dist
           mv userchrome-loader-linux.AppImage dist/
 
+      # Package macOS app
       - name: Package macOS app
         if: runner.os == 'macOS'
         run: |
@@ -226,7 +309,8 @@ If you encounter "Missing DLL" errors, please install the VC++ Redistributable.
           name: userchrome-loader-Windows
           path: |
             dist/userchrome-loader-windows.exe
-            dist/README.txt
+            dist/README-Windows.txt
+            dist/run-with-troubleshooting.bat
           retention-days: 90
 
       - name: Upload artifacts (Linux)
