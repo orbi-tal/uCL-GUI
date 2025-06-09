@@ -111,9 +111,23 @@ jobs:
       - name: Build with PyInstaller (Linux)
         if: runner.os == 'Linux'
         run: |
+          # Debug info
           python -c "import sys; print('Python executable:', sys.executable)"
+          python -c "import sys; print('Python version:', sys.version)"
+          python -c "import platform; print('Platform:', platform.platform())"
           python -c "import PyQt6; print('PyQt6 location:', PyQt6.__file__)"
-          pyinstaller --clean --noconfirm --log-level=INFO main.spec
+          python -c "import site; print('Site packages:', site.getsitepackages())"
+          
+          # List PyQt6 plugins
+          PYQT_PATH=$(python -c "import PyQt6; print(PyQt6.__path__[0])")
+          echo "PyQt6 path: $PYQT_PATH"
+          if [ -d "$PYQT_PATH/Qt6/plugins" ]; then
+            echo "Qt6 plugins directory contents:"
+            find "$PYQT_PATH/Qt6/plugins" -type f | sort
+          fi
+          
+          # Build with more detailed logging
+          python -m PyInstaller --clean --noconfirm --log-level=DEBUG main.spec
         shell: bash
 
       # Build macOS executable
@@ -256,6 +270,20 @@ jobs:
       - name: Create Linux AppImage
         if: runner.os == 'Linux'
         run: |
+          # Check if build was successful
+          if [ ! -f "dist/userchrome-loader" ]; then
+            echo "ERROR: Build failed - userchrome-loader executable not found!"
+            echo "Contents of dist directory:"
+            ls -la dist/ || echo "dist directory does not exist"
+            echo "Contents of build directory:"
+            ls -la build/ || echo "build directory does not exist"
+            echo "Attempting to find the executable elsewhere:"
+            find . -name "userchrome-loader" -type f
+            exit 1
+          fi
+          
+          echo "Build successful - creating AppImage..."
+          
           # Download appimagetool
           wget -q https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage -O appimagetool
           chmod +x appimagetool
@@ -263,6 +291,16 @@ jobs:
           # Create AppDir structure
           mkdir -p UserChrome-Loader.AppDir/usr/bin
           cp dist/userchrome-loader UserChrome-Loader.AppDir/usr/bin/
+          
+          # Copy additional libraries if needed
+          mkdir -p UserChrome-Loader.AppDir/usr/lib
+          # Try to identify and copy Qt libraries
+          PYQT_PATH=$(python -c "import PyQt6; print(PyQt6.__path__[0])" 2>/dev/null || echo "")
+          if [ -n "$PYQT_PATH" ] && [ -d "$PYQT_PATH/Qt6/plugins" ]; then
+            echo "Copying Qt plugins..."
+            mkdir -p UserChrome-Loader.AppDir/usr/lib/plugins
+            cp -r "$PYQT_PATH/Qt6/plugins"/* UserChrome-Loader.AppDir/usr/lib/plugins/ || echo "Failed to copy Qt plugins"
+          fi
 
           # Create desktop file
           echo "[Desktop Entry]" > UserChrome-Loader.AppDir/userchrome-loader.desktop
@@ -281,18 +319,50 @@ jobs:
             touch UserChrome-Loader.AppDir/userchrome-loader.png
           fi
 
-          # Create AppRun script
-          echo "#!/bin/bash" > UserChrome-Loader.AppDir/AppRun
-          echo 'HERE="$(dirname "$(readlink -f "${0}")")"' >> UserChrome-Loader.AppDir/AppRun
-          echo 'export PATH="${HERE}/usr/bin:${PATH}"' >> UserChrome-Loader.AppDir/AppRun
-          echo 'export LD_LIBRARY_PATH="${HERE}/usr/lib:${LD_LIBRARY_PATH}"' >> UserChrome-Loader.AppDir/AppRun
-          echo 'exec "${HERE}/usr/bin/userchrome-loader" "$@"' >> UserChrome-Loader.AppDir/AppRun
+          # Create AppRun script with enhanced environment setup
+          cat > UserChrome-Loader.AppDir/AppRun << 'EOF'
+#!/bin/bash
+HERE="$(dirname "$(readlink -f "${0}")")"
+export PATH="${HERE}/usr/bin:${PATH}"
+export LD_LIBRARY_PATH="${HERE}/usr/lib:${HERE}/usr/lib/plugins:${LD_LIBRARY_PATH}"
+
+# Set Qt platform plugin path
+export QT_PLUGIN_PATH="${HERE}/usr/lib/plugins"
+export QT_QPA_PLATFORM_PLUGIN_PATH="${HERE}/usr/lib/plugins/platforms"
+
+# Debug information if --debug argument is passed
+if [[ "$*" == *"--debug"* ]]; then
+  echo "AppImage environment:"
+  echo "PATH: $PATH"
+  echo "LD_LIBRARY_PATH: $LD_LIBRARY_PATH"
+  echo "QT_PLUGIN_PATH: $QT_PLUGIN_PATH"
+  echo "Contents of plugins directory:"
+  find "${HERE}/usr/lib/plugins" -type f 2>/dev/null || echo "No plugins directory"
+fi
+
+# Execute the application
+exec "${HERE}/usr/bin/userchrome-loader" "$@"
+EOF
           chmod +x UserChrome-Loader.AppDir/AppRun
 
-          # Build AppImage
-          ARCH=x86_64 ./appimagetool UserChrome-Loader.AppDir userchrome-loader-linux.AppImage
+          # Build AppImage with error handling
+          echo "Building AppImage..."
           mkdir -p dist
-          mv userchrome-loader-linux.AppImage dist/
+          ARCH=x86_64 ./appimagetool UserChrome-Loader.AppDir dist/userchrome-loader-linux.AppImage || {
+            echo "ERROR: AppImage creation failed. Trying with verbose output..."
+            ARCH=x86_64 ./appimagetool --verbose UserChrome-Loader.AppDir dist/userchrome-loader-linux.AppImage || {
+              echo "ERROR: AppImage creation failed again. Creating a fallback tarball..."
+              tar -czvf dist/userchrome-loader-linux.tar.gz UserChrome-Loader.AppDir
+            }
+          }
+          
+          # Verify AppImage was created
+          if [ -f "dist/userchrome-loader-linux.AppImage" ]; then
+            echo "AppImage created successfully."
+            chmod +x dist/userchrome-loader-linux.AppImage
+          else
+            echo "WARNING: AppImage creation failed, using fallback tarball."
+          fi
 
       # Package macOS app
       - name: Package macOS app
@@ -340,7 +410,10 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: userchrome-loader-Linux
-          path: dist/userchrome-loader-linux.AppImage
+          path: |
+            dist/userchrome-loader-linux.AppImage
+            dist/userchrome-loader-linux.tar.gz
+            dist/userchrome-loader
           retention-days: 90
 
       - name: Upload artifacts (macOS)
@@ -377,6 +450,7 @@ jobs:
             artifacts/**/*.AppImage
             artifacts/**/*.dmg
             artifacts/**/*.tar.gz
+            artifacts/**/userchrome-loader
             artifacts/**/userchrome-loader-macos
           name: "UserChrome Loader ${{ github.ref_name }}"
           token: ${{ secrets.GITHUB_TOKEN }}

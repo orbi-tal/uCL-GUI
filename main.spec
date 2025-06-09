@@ -26,26 +26,30 @@ print(f"Using icon: {icon_file}")
 # PyInstaller Analysis configuration
 block_cipher = None
 
-# Get site-packages path for macOS
-site_packages = site.getsitepackages()[0]
-pyqt_path = os.path.join(site_packages, 'PyQt6')
-
-# Add debugging information for macOS
-if get_platform() == 'darwin':
+# Get site-packages path for all platforms
+try:
+    site_packages = site.getsitepackages()[0]
+    pyqt_path = os.path.join(site_packages, 'PyQt6')
+    print(f"Site packages path: {site_packages}")
     print(f"PyQt6 path: {pyqt_path}")
-    print(f"Site packages: {site_packages}")
-    print(f"Python version: {sys.version}")
-    print(f"Platform: {platform.platform()}")
+except Exception as e:
+    print(f"Error getting site packages: {e}")
+    # Fallback for any platform
+    if hasattr(sys, 'prefix'):
+        site_packages = os.path.join(sys.prefix, 'lib', f'python{sys.version_info.major}.{sys.version_info.minor}', 'site-packages')
+        pyqt_path = os.path.join(site_packages, 'PyQt6')
+        print(f"Using fallback site packages path: {site_packages}")
+
+# Add debugging information for all platforms
+print(f"Python version: {sys.version}")
+print(f"Platform: {platform.platform()}")
+print(f"OS: {get_platform()}")
 
 # Simplified Analysis - let PyInstaller handle dependencies automatically
 a = Analysis(
     ['src/launcher.py'],
     pathex=[],
-    binaries=[
-        # Explicitly include Qt plugins for macOS
-        (os.path.join(pyqt_path, 'Qt6', 'plugins', 'platforms', '*'), 'platforms') if get_platform() == 'darwin' else (),
-        (os.path.join(pyqt_path, 'Qt6', 'plugins', 'styles', '*'), 'styles') if get_platform() == 'darwin' else (),
-    ],  # Explicitly include necessary binaries for macOS
+    binaries=[],  # Empty list is safer - we'll handle platform-specific binaries below
     datas=[
         # Include all assets
         ('assets', 'assets'),
@@ -153,33 +157,51 @@ if get_platform() == 'darwin':
     )
 
     # Add explicit plugins and frameworks for Qt on macOS
-    extra_binaries = []
-    qt_plugin_paths = [
-        ('platforms', os.path.join(pyqt_path, 'Qt6', 'plugins', 'platforms')),
-        ('styles', os.path.join(pyqt_path, 'Qt6', 'plugins', 'styles')),
-        ('imageformats', os.path.join(pyqt_path, 'Qt6', 'plugins', 'imageformats')),
-    ]
-    
-    for dest, src in qt_plugin_paths:
-        if os.path.exists(src):
-            for item in os.listdir(src):
-                if item.endswith('.dylib'):
-                    source_item = os.path.join(src, item)
-                    if os.path.isfile(source_item):
-                        print(f"Adding Qt plugin: {item} from {source_item} to {dest}")
-                        extra_binaries.append((source_item, dest))
+        extra_binaries = []
+        try:
+            qt_plugin_paths = [
+                ('platforms', os.path.join(pyqt_path, 'Qt6', 'plugins', 'platforms')),
+                ('styles', os.path.join(pyqt_path, 'Qt6', 'plugins', 'styles')),
+                ('imageformats', os.path.join(pyqt_path, 'Qt6', 'plugins', 'imageformats')),
+            ]
+        
+            for dest, src in qt_plugin_paths:
+                if os.path.exists(src):
+                    for item in os.listdir(src):
+                        if item.endswith('.dylib'):
+                            source_item = os.path.join(src, item)
+                            if os.path.isfile(source_item):
+                                print(f"Adding Qt plugin: {item} from {source_item} to {dest}")
+                                extra_binaries.append((source_item, dest))
+        except Exception as e:
+            print(f"Warning: Failed to collect Qt plugins: {e}")
 
-    coll = COLLECT(
-        exe,
-        a.binaries,
-        a.zipfiles,
-        a.datas,
-        extra_binaries,
-        strip=False,
-        upx=False,
-        upx_exclude=[],
-        name='userchrome-loader'
-    )
+    # Safe collect - handle the case where extra_binaries might be empty or invalid
+    try:
+        coll = COLLECT(
+            exe,
+            a.binaries,
+            a.zipfiles,
+            a.datas,
+            extra_binaries,
+            strip=False,
+            upx=False,
+            upx_exclude=[],
+            name='userchrome-loader'
+        )
+    except Exception as e:
+        print(f"Warning: Error during COLLECT with extra_binaries: {e}")
+        # Fallback without extra_binaries
+        coll = COLLECT(
+            exe,
+            a.binaries,
+            a.zipfiles,
+            a.datas,
+            strip=False,
+            upx=False,
+            upx_exclude=[],
+            name='userchrome-loader'
+        )
 
     app = BUNDLE(
         coll,
@@ -202,34 +224,63 @@ if get_platform() == 'darwin':
 
 else:
     # Windows/Linux: Create single executable
-    exe = EXE(
-        pyz,
-        a.scripts,
-        a.binaries,
-        a.zipfiles,
-        a.datas,
-        [],
-        name='userchrome-loader',
-        debug=False,
-        bootloader_ignore_signals=False,
-        strip=False,
-        upx=True,
-        upx_exclude=[
-            # Don't compress graphics libraries
-            'libGL.so*',
-            'libGLX.so*',
-            'libEGL.so*',
-            'libGLU.so*',
-            'libxcb*.so*',
-            'libxkb*.so*',
-            # Don't compress DLLs on Windows
-            '*.dll',
-        ],
-        runtime_tmpdir=None,
-        console=False,
-        disable_windowed_traceback=False,
-        target_arch=None,
-        codesign_identity=None,
-        entitlements_file=None,
-        icon=icon_file,
-    )
+    try:
+        # Platform-specific configurations
+        if get_platform() == 'linux':
+            console_mode = False  # GUI mode for Linux
+            strip_mode = False    # Don't strip symbols on Linux for better error reporting
+            upx_mode = False      # Disable UPX on Linux to avoid compatibility issues
+        else:  # Windows
+            console_mode = False  # GUI mode for Windows
+            strip_mode = False    # Don't strip symbols on Windows
+            upx_mode = True       # UPX is generally safe on Windows
+            
+        exe = EXE(
+            pyz,
+            a.scripts,
+            a.binaries,
+            a.zipfiles,
+            a.datas,
+            [],
+            name='userchrome-loader',
+            debug=False,
+            bootloader_ignore_signals=False,
+            strip=strip_mode,
+            upx=upx_mode,
+            upx_exclude=[
+                # Don't compress graphics libraries
+                'libGL.so*',
+                'libGLX.so*',
+                'libEGL.so*',
+                'libGLU.so*',
+                'libxcb*.so*',
+                'libxkb*.so*',
+                # Don't compress DLLs on Windows
+                '*.dll',
+            ],
+            runtime_tmpdir=None,
+            console=console_mode,
+            disable_windowed_traceback=False,
+            target_arch=None,
+            codesign_identity=None,
+            entitlements_file=None,
+            icon=icon_file,
+        )
+    except Exception as e:
+        print(f"Error during EXE creation: {e}")
+        # Fallback with minimal options
+        exe = EXE(
+            pyz,
+            a.scripts,
+            a.binaries,
+            a.zipfiles,
+            a.datas,
+            [],
+            name='userchrome-loader',
+            debug=False,
+            strip=False,
+            upx=False,
+            runtime_tmpdir=None,
+            console=True,  # Enable console for debugging in fallback mode
+            icon=icon_file,
+        )
