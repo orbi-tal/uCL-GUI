@@ -1,6 +1,7 @@
 import os
 import platform
 import sys
+import site
 from pathlib import Path
 
 def get_platform():
@@ -25,11 +26,26 @@ print(f"Using icon: {icon_file}")
 # PyInstaller Analysis configuration
 block_cipher = None
 
+# Get site-packages path for macOS
+site_packages = site.getsitepackages()[0]
+pyqt_path = os.path.join(site_packages, 'PyQt6')
+
+# Add debugging information for macOS
+if get_platform() == 'darwin':
+    print(f"PyQt6 path: {pyqt_path}")
+    print(f"Site packages: {site_packages}")
+    print(f"Python version: {sys.version}")
+    print(f"Platform: {platform.platform()}")
+
 # Simplified Analysis - let PyInstaller handle dependencies automatically
 a = Analysis(
     ['src/launcher.py'],
     pathex=[],
-    binaries=[],  # Let PyInstaller auto-detect binaries
+    binaries=[
+        # Explicitly include Qt plugins for macOS
+        (os.path.join(pyqt_path, 'Qt6', 'plugins', 'platforms', '*'), 'platforms') if get_platform() == 'darwin' else (),
+        (os.path.join(pyqt_path, 'Qt6', 'plugins', 'styles', '*'), 'styles') if get_platform() == 'darwin' else (),
+    ],  # Explicitly include necessary binaries for macOS
     datas=[
         # Include all assets
         ('assets', 'assets'),
@@ -38,12 +54,14 @@ a = Analysis(
         ('src/ui/style/fonts', 'src/ui/style/fonts'),
     ],
     exclude_binaries=False,
-    win_private_assemblies=False,  # Let Windows handle assemblies
+    # Platform-specific configuration
     hiddenimports=[
         # PyQt6 core modules
         'PyQt6.QtWidgets',
         'PyQt6.QtCore',
         'PyQt6.QtGui',
+        'PyQt6.QtSvg',
+        'PyQt6.QtPrintSupport',
         'PyQt6.sip',
 
         # Application modules
@@ -101,7 +119,7 @@ a = Analysis(
         'jupyter',
     ],
     win_no_prefer_redirects=False,
-    win_private_assemblies=False,
+    win_private_assemblies=False,  # Let Windows handle assemblies
     cipher=block_cipher,
     noarchive=False,
 )
@@ -115,7 +133,7 @@ pyz = PYZ(
 
 # Platform-specific executable configuration
 if get_platform() == 'darwin':
-    # macOS: Create app bundle
+    # macOS: Create app bundle with more debugging and fixes for Qt
     exe = EXE(
         pyz,
         a.scripts,
@@ -126,7 +144,7 @@ if get_platform() == 'darwin':
         bootloader_ignore_signals=False,
         strip=False,
         upx=False,  # Disable UPX on macOS
-        console=False,
+        console=True,  # Set to True for debugging
         disable_windowed_traceback=False,
         target_arch=None,
         codesign_identity=None,
@@ -134,11 +152,29 @@ if get_platform() == 'darwin':
         icon=icon_file,
     )
 
+    # Add explicit plugins and frameworks for Qt on macOS
+    extra_binaries = []
+    qt_plugin_paths = [
+        ('platforms', os.path.join(pyqt_path, 'Qt6', 'plugins', 'platforms')),
+        ('styles', os.path.join(pyqt_path, 'Qt6', 'plugins', 'styles')),
+        ('imageformats', os.path.join(pyqt_path, 'Qt6', 'plugins', 'imageformats')),
+    ]
+    
+    for dest, src in qt_plugin_paths:
+        if os.path.exists(src):
+            for item in os.listdir(src):
+                if item.endswith('.dylib'):
+                    source_item = os.path.join(src, item)
+                    if os.path.isfile(source_item):
+                        print(f"Adding Qt plugin: {item} from {source_item} to {dest}")
+                        extra_binaries.append((source_item, dest))
+
     coll = COLLECT(
         exe,
         a.binaries,
         a.zipfiles,
         a.datas,
+        extra_binaries,
         strip=False,
         upx=False,
         upx_exclude=[],
@@ -159,6 +195,8 @@ if get_platform() == 'darwin':
             'NSHighResolutionCapable': True,
             'NSRequiresAquaSystemAppearance': False,
             'LSMinimumSystemVersion': '10.15.0',
+            'NSPrincipalClass': 'NSApplication',
+            'CFBundleDocumentTypes': [],
         },
     )
 

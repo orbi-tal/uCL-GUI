@@ -120,9 +120,18 @@ jobs:
       - name: Build with PyInstaller (macOS)
         if: runner.os == 'macOS'
         run: |
+          # Debug info
           python -c "import sys; print('Python executable:', sys.executable)"
           python -c "import PyQt6; print('PyQt6 location:', PyQt6.__file__)"
-          pyinstaller --clean --noconfirm --log-level=INFO main.spec
+          
+          # Install additional macOS dependencies
+          python -m pip install packaging
+          
+          # Set environment variables for macOS
+          export DYLD_LIBRARY_PATH=$DYLD_LIBRARY_PATH:$(python -c "import PyQt6; print(PyQt6.__path__[0])")
+          
+          # Add verbose logging to debug build issues
+          pyinstaller --clean --noconfirm --log-level=DEBUG main.spec
         shell: bash
 
       # Test Windows executable
@@ -289,15 +298,27 @@ jobs:
       - name: Package macOS app
         if: runner.os == 'macOS'
         run: |
+          # List all files in dist directory for debugging
+          echo "Contents of dist directory:"
+          ls -la dist/
+          
           if [ -d "dist/UserChrome Loader.app" ]; then
+            echo "App bundle found. Creating DMG..."
             # Create DMG
             hdiutil create -volname "UserChrome Loader" -srcfolder "dist/UserChrome Loader.app" -ov -format UDZO dist/userchrome-loader-macos.dmg
           else
             echo "Warning: App bundle not found"
+            # Look for executable in different locations
             if [ -f "dist/userchrome-loader" ]; then
+              echo "Found executable. Packaging as binary."
               mv dist/userchrome-loader dist/userchrome-loader-macos
+            elif [ -d "dist/userchrome-loader" ]; then
+              echo "Found directory instead of executable. Creating tar archive."
+              tar -czvf dist/userchrome-loader-macos.tar.gz -C dist userchrome-loader
             else
               echo "Error: No macOS executable found"
+              echo "Contents of build directory:"
+              find . -name "userchrome-loader*" -type f -o -type d
               exit 1
             fi
           fi
@@ -329,6 +350,8 @@ jobs:
           name: userchrome-loader-macOS
           path: |
             dist/userchrome-loader-macos.dmg
+            dist/userchrome-loader-macos
+            dist/userchrome-loader-macos.tar.gz
             dist/*.app
           retention-days: 90
 
@@ -353,6 +376,8 @@ jobs:
             artifacts/**/*.exe
             artifacts/**/*.AppImage
             artifacts/**/*.dmg
+            artifacts/**/*.tar.gz
+            artifacts/**/userchrome-loader-macos
           name: "UserChrome Loader ${{ github.ref_name }}"
           token: ${{ secrets.GITHUB_TOKEN }}
           draft: false
