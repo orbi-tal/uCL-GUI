@@ -40,6 +40,21 @@ except Exception as e:
         pyqt_path = os.path.join(site_packages, 'PyQt6')
         print(f"Using fallback site packages path: {site_packages}")
 
+# On macOS, try to locate Qt plugins in different locations
+if get_platform() == 'darwin':
+    qt_plugins_paths = [
+        os.path.join(pyqt_path, 'Qt6', 'plugins'),
+        os.path.join(pyqt_path, 'Qt', 'plugins'),
+        os.path.join(site_packages, 'PyQt6', 'Qt', 'plugins'),
+        os.path.join(site_packages, 'PyQt6', 'Qt6', 'plugins'),
+    ]
+    
+    for path in qt_plugins_paths:
+        if os.path.exists(path):
+            print(f"Found Qt plugins at: {path}")
+            os.environ['QT_PLUGIN_PATH'] = path
+            break
+
 # Add debugging information for all platforms
 print(f"Python version: {sys.version}")
 print(f"Platform: {platform.platform()}")
@@ -56,6 +71,10 @@ a = Analysis(
         # Include style files
         ('src/ui/style/*.py', 'src/ui/style'),
         ('src/ui/style/fonts', 'src/ui/style/fonts'),
+        # Include Qt plugins for macOS
+        (os.path.join(pyqt_path, 'Qt6', 'plugins', 'platforms'), 'PyQt6/Qt6/plugins/platforms') if os.path.exists(os.path.join(pyqt_path, 'Qt6', 'plugins', 'platforms')) and get_platform() == 'darwin' else (),
+        (os.path.join(pyqt_path, 'Qt6', 'plugins', 'styles'), 'PyQt6/Qt6/plugins/styles') if os.path.exists(os.path.join(pyqt_path, 'Qt6', 'plugins', 'styles')) and get_platform() == 'darwin' else (),
+        (os.path.join(pyqt_path, 'Qt6', 'plugins', 'imageformats'), 'PyQt6/Qt6/plugins/imageformats') if os.path.exists(os.path.join(pyqt_path, 'Qt6', 'plugins', 'imageformats')) and get_platform() == 'darwin' else (),
     ],
     exclude_binaries=False,
     # Platform-specific configuration
@@ -148,7 +167,7 @@ if get_platform() == 'darwin':
         bootloader_ignore_signals=False,
         strip=False,
         upx=False,  # Disable UPX on macOS
-        console=True,  # Set to True for debugging
+        console=False,  # Set to False for production (no terminal window)
         disable_windowed_traceback=False,
         target_arch=None,
         codesign_identity=None,
@@ -157,24 +176,36 @@ if get_platform() == 'darwin':
     )
 
     # Add explicit plugins and frameworks for Qt on macOS
-        extra_binaries = []
-        try:
-            qt_plugin_paths = [
-                ('platforms', os.path.join(pyqt_path, 'Qt6', 'plugins', 'platforms')),
-                ('styles', os.path.join(pyqt_path, 'Qt6', 'plugins', 'styles')),
-                ('imageformats', os.path.join(pyqt_path, 'Qt6', 'plugins', 'imageformats')),
-            ]
+    extra_binaries = []
+    try:
+        # Look for Qt plugins in multiple possible locations
+        possible_qt_roots = [
+            os.path.join(pyqt_path, 'Qt6'),
+            os.path.join(pyqt_path, 'Qt'),
+            os.path.join(site_packages, 'PyQt6', 'Qt6'),
+            os.path.join(site_packages, 'PyQt6', 'Qt'),
+        ]
         
-            for dest, src in qt_plugin_paths:
-                if os.path.exists(src):
-                    for item in os.listdir(src):
-                        if item.endswith('.dylib'):
-                            source_item = os.path.join(src, item)
-                            if os.path.isfile(source_item):
-                                print(f"Adding Qt plugin: {item} from {source_item} to {dest}")
-                                extra_binaries.append((source_item, dest))
-        except Exception as e:
-            print(f"Warning: Failed to collect Qt plugins: {e}")
+        # Plugin categories we need
+        plugin_categories = ['platforms', 'styles', 'imageformats', 'iconengines']
+        
+        # Try each possible Qt root
+        for qt_root in possible_qt_roots:
+            plugin_dir = os.path.join(qt_root, 'plugins')
+            if os.path.exists(plugin_dir):
+                print(f"Found Qt plugins directory: {plugin_dir}")
+                for category in plugin_categories:
+                    category_dir = os.path.join(plugin_dir, category)
+                    if os.path.exists(category_dir):
+                        print(f"Found {category} plugins at: {category_dir}")
+                        for item in os.listdir(category_dir):
+                            if item.endswith('.dylib'):
+                                source_item = os.path.join(category_dir, item)
+                                if os.path.isfile(source_item):
+                                    print(f"Adding Qt plugin: {item} from {source_item} to {category}")
+                                    extra_binaries.append((source_item, category))
+    except Exception as e:
+        print(f"Warning: Failed to collect Qt plugins: {e}")
 
     # Safe collect - handle the case where extra_binaries might be empty or invalid
     try:
@@ -219,6 +250,10 @@ if get_platform() == 'darwin':
             'LSMinimumSystemVersion': '10.15.0',
             'NSPrincipalClass': 'NSApplication',
             'CFBundleDocumentTypes': [],
+            'LSEnvironment': {
+                'QT_PLUGIN_PATH': '../Resources/PyQt6/Qt6/plugins',
+                'QT_QPA_PLATFORM_PLUGIN_PATH': '../Resources/PyQt6/Qt6/plugins/platforms',
+            },
         },
     )
 

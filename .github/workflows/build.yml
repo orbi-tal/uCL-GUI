@@ -130,11 +130,30 @@ jobs:
           # Install additional macOS dependencies
           python -m pip install packaging
           
+          # Verify main.spec exists and is valid
+          echo "Checking main.spec file..."
+          cat main.spec
+          
           # Set environment variables for macOS
           export DYLD_LIBRARY_PATH=$DYLD_LIBRARY_PATH:$(python -c "import PyQt6; print(PyQt6.__path__[0])")
+          export QT_PLUGIN_PATH=$(python -c "import os, PyQt6; print(os.path.join(PyQt6.__path__[0], 'Qt6', 'plugins'))")
+          echo "QT_PLUGIN_PATH: $QT_PLUGIN_PATH"
           
-          # Add verbose logging to debug build issues
-          pyinstaller --clean --noconfirm --log-level=DEBUG main.spec
+          # Create direct PyInstaller hook file for macOS
+          echo "Creating PyQt hook for macOS..."
+          mkdir -p hooks
+          cat > hooks/hook-PyQt6.py << 'EOF'
+from PyInstaller.utils.hooks import collect_data_files, collect_system_data_files, collect_dynamic_libs
+datas = collect_data_files('PyQt6')
+binaries = []
+hiddenimports = ['PyQt6.sip', 'PyQt6.QtCore', 'PyQt6.QtGui', 'PyQt6.QtWidgets']
+EOF
+          
+          # Run PyInstaller with clean options
+          python -m PyInstaller --clean --noconfirm --log-level=INFO --additional-hooks-dir=hooks main.spec || {
+            echo "First PyInstaller attempt failed, trying with debug log level..."
+            python -m PyInstaller --clean --noconfirm --log-level=DEBUG --additional-hooks-dir=hooks main.spec
+          }
         shell: bash
 
       # Test Windows executable
@@ -352,8 +371,8 @@ jobs:
           name: userchrome-loader-macOS
           path: |
             dist/userchrome-loader-macos.dmg
+            dist/userchrome-loader-macos.zip
             dist/userchrome-loader-macos
-            dist/userchrome-loader-macos.tar.gz
             dist/*.app
           retention-days: 90
 
@@ -378,6 +397,7 @@ jobs:
             artifacts/**/*.exe
             artifacts/**/*.AppImage
             artifacts/**/*.dmg
+            artifacts/**/*.zip
           name: "UserChrome Loader ${{ github.ref_name }}"
           token: ${{ secrets.GITHUB_TOKEN }}
           draft: false
